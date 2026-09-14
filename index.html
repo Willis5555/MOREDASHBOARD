@@ -72,8 +72,9 @@
     margin: -12px 0 28px; font-size: 13px;
   }
   h2 {
-    font-size: 19px; font-family: 'Courier New', monospace; color: var(--heading);
-    letter-spacing: 0.02em; margin: 0 0 20px; font-weight: 400;
+    font-size: 15px; font-family: 'Press Start 2P', 'Courier New', monospace;
+    color: var(--heading); letter-spacing: 0; line-height: 1.5;
+    margin: 0 0 22px; font-weight: 400;
   }
 
   .panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; }
@@ -122,6 +123,7 @@
     cursor: pointer; max-width: 68ch;
   }
   .check input { accent-color: var(--accent-dim); margin: 0; }
+  .closed-toggle { margin-top: 16px; }
   .preview {
     font-family: system-ui, sans-serif; font-size: 12px; color: var(--accent-dim);
     margin-top: 7px; min-height: 1em;
@@ -332,10 +334,10 @@
             <button class="max-btn" id="maxBtn">Max</button>
           </div>
           <div class="pct-row" id="pctRow">
+            <button class="pct-btn" data-pct="5">5%</button>
             <button class="pct-btn" data-pct="10">10%</button>
-            <button class="pct-btn" data-pct="25">25%</button>
-            <button class="pct-btn" data-pct="50">50%</button>
-            <button class="pct-btn" data-pct="75">75%</button>
+            <button class="pct-btn" data-pct="20">20%</button>
+            <button class="pct-btn" data-pct="35">35%</button>
           </div>
         </div>
         <div class="field">
@@ -1140,6 +1142,7 @@
   }
 
   const sortState = new WeakMap();
+  let showClosed = false;   // shared by both stake tables
 
   function renderTable(stakes, container, opts = {}) {
     const all = opts.columns || STAKE_COLUMNS;
@@ -1165,7 +1168,10 @@
         tabindex="0" role="button">${c.label}${caret}</th>`;
     }).join("");
 
-    const body = sorted.map(s => {
+    const body = sorted.length === 0 && opts.onToggleClosed
+      ? `<tr><td colspan="${cols.length}" class="muted">Every stake here is closed —
+           tick below to show them.</td></tr>`
+      : sorted.map(s => {
       if (s.error) {
         return `<tr class="row-error"><td>#${esc(s.id.toString())}</td>
           <td colspan="${cols.length - 1}">Couldn't read this ${esc(s.asset.meta.symbol)} stake from the contract</td></tr>`;
@@ -1182,6 +1188,12 @@
           `<span><em>${esc(k)}</em>${v}</span>`).join("")}</div>
       </td></tr>`;
 
+    const toggle = !opts.onToggleClosed ? "" : `
+      <label class="check closed-toggle">
+        <input type="checkbox" ${showClosed ? "checked" : ""}>
+        Show closed stakes${opts.hiddenClosed ? ` (${opts.hiddenClosed} hidden)` : ""}
+      </label>`;
+
     const legend = opts.actions ? `
       <div class="legend">
         <span class="l-ready">Unlocked — unstake in full</span>
@@ -1197,6 +1209,7 @@
           ${foot ? `<tfoot>${foot}</tfoot>` : ""}
         </table>
       </div>
+      ${toggle}
       ${legend}
       <p class="hint">${opts.hint || "Click a column heading to sort. Unstaking closes the stake and withdraws principal plus rewards."}</p>`;
 
@@ -1213,6 +1226,9 @@
       });
     });
 
+    const closedBox = container.querySelector(".closed-toggle input");
+    if (closedBox) closedBox.addEventListener("change", opts.onToggleClosed);
+
     container.querySelectorAll("button[data-stake]").forEach(btn => {
       btn.addEventListener("click", () =>
         sendUnstake(btn.dataset.asset, btn.dataset.stake, btn.dataset.state, btn));
@@ -1227,7 +1243,19 @@
         container.innerHTML = `<p class="msg">${esc(emptyText)}</p>`;
         return;
       }
-      renderTable(stakes, container, { stats: stakeFootStats, ...opts });
+
+      // Closed stakes are history — hidden unless asked for. The footer still
+      // totals everything, so lifetime ROI doesn't change with the toggle.
+      const draw = () => {
+        const visible = showClosed ? stakes : stakes.filter(s => s.error || s.info.status);
+        renderTable(visible, container, {
+          stats: () => stakeFootStats(stakes),
+          hiddenClosed: stakes.length - visible.length,
+          onToggleClosed: () => { showClosed = !showClosed; draw(); },
+          ...opts
+        });
+      };
+      draw();
     } catch (e) {
       container.innerHTML = `<p class="msg error">Couldn't read stake data for this address: ${esc(e.message || e)}</p>`;
     }
