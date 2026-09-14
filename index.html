@@ -35,6 +35,9 @@
   @media (min-width: 1260px) {
     .wrap { max-width: 1200px; }
   }
+  @media (min-width: 1400px) {
+    .wrap { max-width: 1340px; }
+  }
 
   header { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 40px; }
   .eyebrow { font-family: 'Courier New', monospace; font-size: 13px; color: var(--text-dim); letter-spacing: 0.02em; }
@@ -80,10 +83,6 @@
   .cell { text-align: center; }
   .cell .k { display: block; font-family: system-ui, sans-serif; font-size: 13px; color: var(--text-dim); margin-bottom: 5px; }
   .cell .v { font-size: 21px; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .summary {
-    padding-bottom: 24px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
-  }
-  .summary .v { font-size: 19px; }
   .cell .note { display: block; font-family: system-ui, sans-serif; font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 
   label { display: block; font-family: system-ui, sans-serif; font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
@@ -176,7 +175,16 @@
   .detail-list .row-error td { color: var(--red); }
   .detail-list tfoot td {
     border-bottom: none; border-top: 1px solid var(--accent-dim);
-    padding-top: 13px; color: var(--accent);
+    padding-top: 14px; white-space: normal;
+  }
+  .foot-stats {
+    display: flex; flex-wrap: wrap; gap: 10px 30px;
+    font-family: system-ui, sans-serif; font-size: 13px; color: var(--accent);
+    text-align: left;
+  }
+  .foot-stats em {
+    display: block; font-style: normal; font-size: 11px;
+    color: var(--text-dim); margin-bottom: 3px;
   }
 
   /* Status reads as a state, not a word — the dot carries it at a glance. */
@@ -292,7 +300,7 @@
       <div class="verify">
         This page is not run by the $MORE team. Staking sends your tokens to
         <code id="stakingAddrText"></code> —
-        <a id="stakingAddrLink" target="_blank" rel="noopener">check it on Etherscan</a>
+        <a id="stakingAddrLink" target="_blank" rel="noopener">check it on the explorer</a>
         against the address published on the official site before you confirm anything.
       </div>
 
@@ -362,7 +370,7 @@
         "https://ethereum-rpc.publicnode.com",
         "https://eth.llamarpc.com"
       ],
-      explorer: "https://etherscan.io",
+      explorer: "https://etherscan.io", explorerName: "Etherscan",
       // DexScreener labels this chain "ethereum"; used to filter out pairs
       // for same-address tokens deployed on other chains.
       dexChain: "ethereum"
@@ -373,7 +381,7 @@
       // native chain token. The public endpoint is rate limited and unguaranteed.
       native: { name: "Ether", symbol: "ETH", decimals: 18 },
       rpc: "https://rpc.mainnet.chain.robinhood.com",
-      explorer: "https://robinhoodchain.blockscout.com",
+      explorer: "https://robinhoodchain.blockscout.com", explorerName: "Robinhood Blockscout",
       logRpcs: ["https://rpc.mainnet.chain.robinhood.com"],
       // DexScreener's slug for this chain is unconfirmed, so pairs are matched on
       // token address alone. If no pool is indexed, price simply shows as unknown.
@@ -850,14 +858,26 @@
 
   function stakeTotals(stakes) {
     const zero = ethers.BigNumber.from(0);
-    let locked = zero, pending = zero, open = 0, asset = selected();
+    let locked = zero, principal = zero, pending = zero, claimed = zero;
+    let open = 0, asset = selected();
     for (const s of stakes) {
       if (s.error) continue;
       asset = s.asset;
+      principal = principal.add(s.info.amount);        // every stake ever opened
+      claimed = claimed.add(s.info.claimed);
       if (s.info.status) { locked = locked.add(s.info.amount); open++; }
       if (s.pending) pending = pending.add(s.pending);
     }
-    return { locked, pending, open, asset };
+    return { locked, principal, pending, claimed, open, asset };
+  }
+
+  // Rewards earned against principal committed. Not annualised — a 7-day stake
+  // and a 2-year stake showing the same figure mean very different things.
+  function roiPercent(rewards, principal) {
+    if (!principal || principal.isZero()) return null;
+    const num = parseFloat(ethers.utils.formatUnits(rewards, 18));
+    const den = parseFloat(ethers.utils.formatUnits(principal, 18));
+    return den > 0 ? (num / den) * 100 : null;
   }
 
   // Amber marks a stake past its grace period and starting to bleed value.
@@ -878,6 +898,20 @@
     late: "More than " + UNSTAKE_LATE_DAYS + " days past its term — this stake is bleeding value. Closes it and withdraws principal plus rewards.",
     ready: "Closes the stake and withdraws principal plus rewards."
   };
+
+  const ZERO = () => ethers.BigNumber.from(0);
+
+  // Per-row figures: total rewards on a stake, its combined worth, and its return.
+  const rowRewards = (s) => s.info.claimed.add(s.pending || ZERO());
+  function rowCombinedUsd(s) {
+    const a = s.asset;
+    if (a.price == null) return null;
+    return (toFloat(s.info.amount, a) + toFloat(rowRewards(s), a)) * a.price;
+  }
+  const pct = (v) => v == null ? `<span class="muted">—</span>`
+    : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+  const money = (v) => v == null ? `<span class="muted">—</span>`
+    : "$" + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   function termDays(s) {
     const start = s.info.startTime.toNumber();
@@ -915,6 +949,12 @@
       cell: s => s.asset.price == null ? `<span class="muted">—</span>`
         : "$" + (toFloat(s.info.amount, s.asset) * s.asset.price)
             .toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+    { key: "combined", label: "Combined", num: true,
+      sort: s => rowCombinedUsd(s) ?? -1,
+      cell: s => money(rowCombinedUsd(s)) },
+    { key: "roi",     label: "ROI",     num: true,
+      sort: s => roiPercent(rowRewards(s), s.info.amount) ?? -Infinity,
+      cell: s => pct(roiPercent(rowRewards(s), s.info.amount)) },
     { key: "start",   label: "Opened",  sort: s => s.info.startTime.toNumber(),
       cell: s => fmtDateShort(s.info.startTime) },
     { key: "term",    label: "Term",    num: true, sort: s => termDays(s),
@@ -939,35 +979,53 @@
     { key: "action",  label: "", nosort: true, cell: actionCell }
   ];
 
-  function summaryHtml(stakes) {
+  // Aggregates live in the table's own footer. A single full-width cell avoids
+  // colspan arithmetic that breaks every time a column is added or removed.
+  function stakeFootStats(stakes) {
     const t = stakeTotals(stakes);
     const a = t.asset, sym = esc(a.meta.symbol);
-    const money = (bn) => a.price == null ? "—" : usd(toFloat(bn, a) * a.price);
+    const money = (bn) => a.price == null ? null : usd(toFloat(bn, a) * a.price);
     const combined = t.locked.add(t.pending);
+    const roi = roiPercent(t.pending.add(t.claimed), t.principal);
+    const withUsd = (bn) => {
+      const m = money(bn);
+      return fmt(bn, a, 2) + " " + sym + (m ? ` <span class="muted">${m}</span>` : "");
+    };
 
-    return `
-      <div class="grid summary">
-        <div class="cell">
-          <span class="k">Total staked</span>
-          <span class="v">${fmt(t.locked, a, 2)} ${sym}</span>
-          <span class="note">${money(t.locked)}</span>
-        </div>
-        <div class="cell">
-          <span class="k">Active stakes</span>
-          <span class="v">${t.open}</span>
-          <span class="note">of ${stakes.length} on record</span>
-        </div>
-        <div class="cell">
-          <span class="k">Pending rewards</span>
-          <span class="v">${fmt(t.pending, a, 2)} ${sym}</span>
-          <span class="note">${money(t.pending)}</span>
-        </div>
-        <div class="cell">
-          <span class="k">Combined value</span>
-          <span class="v">${money(combined)}</span>
-          <span class="note">${fmt(combined, a, 2)} ${sym} staked plus rewards</span>
-        </div>
-      </div>`;
+    return [
+      ["Open", `${t.open} of ${stakes.length}`],
+      ["Staked", withUsd(t.locked)],
+      ["Rewards", withUsd(t.pending)],
+      ["Combined", money(combined) || fmt(combined, a, 2) + " " + sym],
+      ["ROI", roi == null ? "—" : (roi >= 0 ? "+" : "") + roi.toFixed(2) + "%"]
+    ];
+  }
+
+  // Same treatment for the activity feed, summarising the events on screen.
+  function activityFootStats(rows) {
+    const zero = ethers.BigNumber.from(0);
+    let amount = zero, rewards = zero, asset = selected(), stakes = 0, unstakes = 0;
+    for (const r of rows) {
+      asset = r.asset;
+      if (r.kind === "stake") stakes++; else unstakes++;
+      if (r.amount) amount = amount.add(r.amount);
+      if (r.rewards) rewards = rewards.add(r.rewards);
+    }
+    const a = asset, sym = esc(a.meta.symbol);
+    const money = (bn) => a.price == null ? null : usd(toFloat(bn, a) * a.price);
+    const roi = roiPercent(rewards, amount);
+    const withUsd = (bn) => {
+      const m = money(bn);
+      return fmt(bn, a, 2) + " " + sym + (m ? ` <span class="muted">${m}</span>` : "");
+    };
+
+    return [
+      ["Events", `${stakes} stake${stakes === 1 ? "" : "s"}, ${unstakes} unstake${unstakes === 1 ? "" : "s"}`],
+      ["Amount", withUsd(amount)],
+      ["Rewards", withUsd(rewards)],
+      ["Combined", money(amount.add(rewards)) || fmt(amount.add(rewards), a, 2) + " " + sym],
+      ["ROI", roi == null ? "—" : (roi >= 0 ? "+" : "") + roi.toFixed(2) + "%"]
+    ];
   }
 
   const sortState = new WeakMap();
@@ -1006,16 +1064,12 @@
         `<td class="${c.num ? "num" : ""}">${c.cell(s)}</td>`).join("") + `</tr>`;
     }).join("");
 
-    const t = opts.noFooter ? null : stakeTotals(stakes);
-    const sym = t ? esc(t.asset.meta.symbol) : "";
-    const value = t && t.asset.price != null
-      ? ` <span class="muted">${usd(toFloat(t.locked.add(t.pending), t.asset) * t.asset.price)}</span>` : "";
-    const foot = !t ? "" : `
-      <tr>
-        <td colspan="3">${t.open} open of ${stakes.length}</td>
-        <td colspan="5" class="muted">${fmt(t.locked, t.asset, 2)} ${sym} staked${value}</td>
-        <td colspan="${cols.length - 8}" class="muted">${fmt(t.pending, t.asset, 2)} ${sym} rewards</td>
-      </tr>`;
+    const stats = opts.stats ? opts.stats(stakes) : null;
+    const foot = !stats ? "" : `
+      <tr><td colspan="${cols.length}">
+        <div class="foot-stats">${stats.map(([k, v]) =>
+          `<span><em>${esc(k)}</em>${v}</span>`).join("")}</div>
+      </td></tr>`;
 
     const legend = opts.actions ? `
       <div class="legend">
@@ -1025,7 +1079,6 @@
       </div>` : "";
 
     container.innerHTML = `
-      ${opts.summary ? summaryHtml(stakes) : ""}
       <div class="detail-list-wrap">
         <table class="detail-list">
           <thead><tr>${head}</tr></thead>
@@ -1063,7 +1116,7 @@
         container.innerHTML = `<p class="msg">${esc(emptyText)}</p>`;
         return;
       }
-      renderTable(stakes, container, { summary: true, noFooter: true, ...opts });
+      renderTable(stakes, container, { stats: stakeFootStats, ...opts });
     } catch (e) {
       container.innerHTML = `<p class="msg error">Couldn't read stake data for this address: ${esc(e.message || e)}</p>`;
     }
@@ -1178,6 +1231,15 @@
         ? "$" + (toFloat(r.amount, r.asset) * r.asset.price)
             .toLocaleString(undefined, { maximumFractionDigits: 2 })
         : `<span class="muted">—</span>` },
+    { key: "rewards", label: "Rewards", num: true,
+      sort: r => r.rewards ? toFloat(r.rewards, r.asset) : -1,
+      cell: r => r.rewards ? fmt(r.rewards, r.asset, 4) : `<span class="muted">—</span>` },
+    { key: "combined", label: "Combined", num: true,
+      sort: r => activityCombined(r) ?? -1,
+      cell: r => money(activityCombined(r)) },
+    { key: "roi", label: "ROI", num: true,
+      sort: r => (r.amount && r.rewards) ? (roiPercent(r.rewards, r.amount) ?? -Infinity) : -Infinity,
+      cell: r => pct((r.amount && r.rewards) ? roiPercent(r.rewards, r.amount) : null) },
     { key: "term", label: "Term", num: true, sort: r => r.days || -1,
       cell: r => r.days ? r.days + "d" : "—" },
     { key: "who", label: "Staker", sort: r => r.staker || "",
@@ -1190,6 +1252,12 @@
     { key: "tx", label: "Tx", nosort: true,
       cell: r => `<a href="${explorerFor(r.asset.chainId)}/tx/${r.hash}" target="_blank" rel="noopener">view</a>` }
   ];
+
+  function activityCombined(r) {
+    const a = r.asset;
+    if (!r.amount || a.price == null) return null;
+    return (toFloat(r.amount, a) + (r.rewards ? toFloat(r.rewards, a) : 0)) * a.price;
+  }
 
   async function loadActivity() {
     const a = selected();
@@ -1233,14 +1301,21 @@
         return;
       }
 
-      // Unstaked only carries the stake ID, so the rest comes from the record.
-      await mapLimit(rows.filter(r => r.kind === "unstake"), 4, async (r) => {
+      // Every row needs its stake record now: Unstaked carries only the ID, and
+      // the rewards figure isn't in either event. Open stakes report what's
+      // accrued so far; closed ones report what was actually paid out.
+      await mapLimit(rows, 3, async (r) => {
         try {
           const info = await a.staking.getStakeInfo(r.stakeId);
-          r.staker = info.staker;
-          r.amount = info.amount;
-          const start = info.startTime.toNumber(), end = info.endTime.toNumber();
-          r.days = (start && end && end > start) ? Math.round((end - start) / 86400) : null;
+          r.staker = r.staker || info.staker;
+          r.amount = r.amount || info.amount;
+          if (!r.days) {
+            const start = info.startTime.toNumber(), end = info.endTime.toNumber();
+            r.days = (start && end && end > start) ? Math.round((end - start) / 86400) : null;
+          }
+          r.rewards = info.status
+            ? await a.staking.earned(r.stakeId).catch(() => null)
+            : info.claimed;
         } catch (e) { /* row still renders with dashes */ }
       });
 
@@ -1256,12 +1331,13 @@
         columns: ACTIVITY_COLUMNS,
         defaultSort: { key: "when", dir: "desc" },
         rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
-        noFooter: true,
+        stats: activityFootStats,
         hint: `${found.toLocaleString()} event${found === 1 ? "" : "s"} from every wallet, across blocks
           ${scannedFrom.toLocaleString()}–${latest.toLocaleString()}${found > rows.length
             ? `, showing the ${rows.length} most recent` : ""}${lastErr
             ? " (scan stopped early — the RPC refused a range)" : ""}. Values use the current
-          price, not the price when the event happened. Click a column heading to sort.`
+          price, not the price when the event happened; rewards are accrued-to-date for open
+          stakes and paid-out totals for closed ones. Click a column heading to sort.`
       });
     } catch (e) {
       const why = esc(e.reason || e.error?.message || e.message || String(e)).slice(0, 200);
@@ -1398,6 +1474,7 @@
     $('stakeSymbol').textContent = a.meta.symbol;
     if (a.staking) {
       $('stakingAddrLink').href = `${explorerFor(a.chainId)}/address/${a.staking.address}`;
+      $('stakingAddrLink').textContent = "check it on " + NETWORKS[a.chainId].explorerName;
       $('stakingAddrLink').style.display = "";
     } else {
       $('stakingAddrLink').style.display = "none";
