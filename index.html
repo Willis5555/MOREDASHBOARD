@@ -69,8 +69,8 @@
     margin: -12px 0 28px; font-size: 13px;
   }
   h2 {
-    font-size: 15px; font-family: 'Courier New', monospace; color: var(--heading);
-    letter-spacing: 0.02em; margin: 0 0 18px; font-weight: 400;
+    font-size: 19px; font-family: 'Courier New', monospace; color: var(--heading);
+    letter-spacing: 0.02em; margin: 0 0 20px; font-weight: 400;
   }
 
   .panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; }
@@ -259,7 +259,7 @@
         <div class="cell"><span class="k">Stakers</span><span class="v" id="stakers">—</span><span class="note" id="stakeCount"></span></div>
         <div class="cell"><span class="k">Rewards distributed</span><span class="v" id="distributed">—</span></div>
         <div class="cell"><span class="k" id="supplyLabel">Total supply</span><span class="v" id="supply">—</span></div>
-        <div class="cell" id="burnCell" style="display:none"><span class="k">Burned</span><span class="v" id="burned">—</span></div>
+        <div class="cell" id="burnCell" style="display:none"><span class="k">Burned</span><span class="v" id="burned">—</span><span class="note" id="burnedNote"></span></div>
       </div>
       <div class="msg" id="poolMsg" style="margin-top:18px;">Reading from chain…</div>
     </div>
@@ -474,6 +474,9 @@
     {
       key: "more-rh", chainId: 4663, kind: "erc20", label: "MORE", logo: LOGO_MORE,
       token: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
+      // Burning here reduces totalSupply rather than parking tokens at a dead
+      // address, so the burn total is this launch figure minus current supply.
+      initialSupply: 1000000000,
       staking: "0xCC22e7f65bEF29aa21f6F59b9363fdc26005dE31",
       priceRef: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
       stakeAbi: STAKING_ABI
@@ -752,7 +755,7 @@
     const a = selected();
     const msg = $('poolMsg');
     ["totalStaked", "stakers", "distributed", "supply", "burned"].forEach(id => $(id).textContent = "—");
-    ["stakedPct", "stakeCount"].forEach(id => {
+    ["stakedPct", "stakeCount", "burnedNote"].forEach(id => {
       $(id).textContent = ""; delete $(id).dataset.pct;
     });
     $('burnCell').style.display = "none";
@@ -791,19 +794,35 @@
         $('supplyLabel').textContent = "Sent to buy & burn";
         $('supply').textContent = supply ? fmtCompact(supply, a) + " " + a.meta.symbol : "—";
       } else if (supply) {
-        // Burned tokens are unrecoverable, so the meaningful denominator is
-        // what's left — both for the headline figure and the staked percentage.
-        const circulating = burned ? supply.sub(burned) : supply;
-        const circFloat = toFloat(circulating, a);
+        // Two burn models. On Ethereum, burned MORE sits at the dead address and
+        // is still counted in totalSupply, so it's subtracted out. On Robinhood
+        // Chain the burn reduces totalSupply itself, so what's left IS the
+        // circulating figure and the burn is the shortfall against launch supply.
+        let remaining = supply, destroyed = null, minted = supply;
 
-        $('supplyLabel').textContent = burned ? "Circulating supply" : "Total supply";
-        $('supply').textContent = fmtCompact(circulating, a) + " " + a.meta.symbol;
+        if (a.burnAddress && burned) {
+          destroyed = burned;
+          remaining = supply.sub(burned);   // dead-address holdings come out
+          minted = supply;                  // totalSupply still counts them
+        } else if (a.initialSupply != null) {
+          minted = ethers.utils.parseUnits(String(a.initialSupply), a.meta.decimals);
+          if (minted.gt(supply)) destroyed = minted.sub(supply);
+        }
 
-        if (circFloat > 0) $('stakedPct').dataset.pct = (a.totalStakedFloat / circFloat * 100).toFixed(1) + "%";
+        // Not labelled "circulating" — a share of this is locked in stakes.
+        const remFloat = toFloat(remaining, a);
+        $('supplyLabel').textContent = "Total supply";
+        $('supply').textContent = fmtCompact(remaining, a) + " " + a.meta.symbol;
 
-        if (burned) {
+        if (remFloat > 0) $('stakedPct').dataset.pct = (a.totalStakedFloat / remFloat * 100).toFixed(1) + "%";
+
+        if (destroyed) {
+          const mintedFloat = toFloat(minted, a);
           $('burnCell').style.display = "";
-          $('burned').textContent = fmtCompact(burned, a) + " " + a.meta.symbol;
+          $('burned').textContent = fmtCompact(destroyed, a) + " " + a.meta.symbol;
+          $('burnedNote').textContent = mintedFloat > 0
+            ? (toFloat(destroyed, a) / mintedFloat * 100).toFixed(1) + "% of total supply"
+            : "";
         }
       } else {
         $('supplyLabel').textContent = "Total supply";
@@ -932,8 +951,6 @@
   }
 
   const STAKE_COLUMNS = [
-    { key: "id",      label: "Stake",   sort: s => Number(s.id.toString()),
-      cell: s => "#" + esc(s.id.toString()) },
     { key: "status",  label: "Status",  sort: s => s.error ? 9 : stakeStatus(s).rank,
       cell: s => {
         const st = stakeStatus(s);
@@ -942,6 +959,8 @@
       } },
     { key: "ticker",  label: "Ticker",  sort: s => s.asset.meta.symbol,
       cell: s => `<span class="ticker">${esc(s.asset.meta.symbol)}</span>` },
+    { key: "id",      label: "Stake",   sort: s => Number(s.id.toString()),
+      cell: s => "#" + esc(s.id.toString()) },
     { key: "amount",  label: "Amount",  num: true, sort: s => toFloat(s.info.amount, s.asset),
       cell: s => fmt(s.info.amount, s.asset, 4) },
     { key: "value",   label: "Value",   num: true,
@@ -949,16 +968,18 @@
       cell: s => s.asset.price == null ? `<span class="muted">—</span>`
         : "$" + (toFloat(s.info.amount, s.asset) * s.asset.price)
             .toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+    { key: "rewards", label: "Rewards", num: true, sort: s => s.pending ? toFloat(s.pending, s.asset) : -1,
+      cell: s => s.pending ? fmt(s.pending, s.asset, 4) : "—" },
     { key: "combined", label: "Combined", num: true,
       sort: s => rowCombinedUsd(s) ?? -1,
       cell: s => money(rowCombinedUsd(s)) },
     { key: "roi",     label: "ROI",     num: true,
       sort: s => roiPercent(rowRewards(s), s.info.amount) ?? -Infinity,
       cell: s => pct(roiPercent(rowRewards(s), s.info.amount)) },
-    { key: "start",   label: "Opened",  sort: s => s.info.startTime.toNumber(),
-      cell: s => fmtDateShort(s.info.startTime) },
     { key: "term",    label: "Term",    num: true, sort: s => termDays(s),
       cell: s => { const d = termDays(s); return d === null ? "—" : d + "d"; } },
+    { key: "start",   label: "Opened",  sort: s => s.info.startTime.toNumber(),
+      cell: s => fmtDateShort(s.info.startTime) },
     { key: "end",     label: "Unlocks", sort: s => s.info.endTime.toNumber(),
       cell: s => {
         const st = stakeStatus(s);
@@ -970,8 +991,6 @@
         const cls = unstakeState(s) === "late" ? "overdue" : "muted";
         return `${date} <span class="${cls}">+${over}d</span>`;
       } },
-    { key: "rewards", label: "Rewards", num: true, sort: s => s.pending ? toFloat(s.pending, s.asset) : -1,
-      cell: s => s.pending ? fmt(s.pending, s.asset, 4) : "—" },
     { key: "claimed", label: "Claimed", num: true, sort: s => toFloat(s.info.claimed, s.asset),
       cell: s => fmt(s.info.claimed, s.asset, 4) },
     { key: "penalty", label: "Penalty", num: true, sort: s => toFloat(s.info.penalty, s.asset),
@@ -997,33 +1016,6 @@
       ["Staked", withUsd(t.locked)],
       ["Rewards", withUsd(t.pending)],
       ["Combined", money(combined) || fmt(combined, a, 2) + " " + sym],
-      ["ROI", roi == null ? "—" : (roi >= 0 ? "+" : "") + roi.toFixed(2) + "%"]
-    ];
-  }
-
-  // Same treatment for the activity feed, summarising the events on screen.
-  function activityFootStats(rows) {
-    const zero = ethers.BigNumber.from(0);
-    let amount = zero, rewards = zero, asset = selected(), stakes = 0, unstakes = 0;
-    for (const r of rows) {
-      asset = r.asset;
-      if (r.kind === "stake") stakes++; else unstakes++;
-      if (r.amount) amount = amount.add(r.amount);
-      if (r.rewards) rewards = rewards.add(r.rewards);
-    }
-    const a = asset, sym = esc(a.meta.symbol);
-    const money = (bn) => a.price == null ? null : usd(toFloat(bn, a) * a.price);
-    const roi = roiPercent(rewards, amount);
-    const withUsd = (bn) => {
-      const m = money(bn);
-      return fmt(bn, a, 2) + " " + sym + (m ? ` <span class="muted">${m}</span>` : "");
-    };
-
-    return [
-      ["Events", `${stakes} stake${stakes === 1 ? "" : "s"}, ${unstakes} unstake${unstakes === 1 ? "" : "s"}`],
-      ["Amount", withUsd(amount)],
-      ["Rewards", withUsd(rewards)],
-      ["Combined", money(amount.add(rewards)) || fmt(amount.add(rewards), a, 2) + " " + sym],
       ["ROI", roi == null ? "—" : (roi >= 0 ? "+" : "") + roi.toFixed(2) + "%"]
     ];
   }
@@ -1331,7 +1323,6 @@
         columns: ACTIVITY_COLUMNS,
         defaultSort: { key: "when", dir: "desc" },
         rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
-        stats: activityFootStats,
         hint: `${found.toLocaleString()} event${found === 1 ? "" : "s"} from every wallet, across blocks
           ${scannedFrom.toLocaleString()}–${latest.toLocaleString()}${found > rows.length
             ? `, showing the ${rows.length} most recent` : ""}${lastErr
