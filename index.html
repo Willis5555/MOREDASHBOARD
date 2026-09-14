@@ -60,6 +60,7 @@
   .asset-tab:hover { color: var(--text); background: transparent; }
   .asset-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
   .tab-flag { color: var(--amber); }
+  .tab-net { font-size: 11px; color: var(--text-dim); margin-left: 5px; }
   .assetnote {
     border-left: 2px solid var(--amber); padding-left: 14px;
     margin: -12px 0 28px; font-size: 13px;
@@ -72,7 +73,11 @@
   .panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; }
   .panel + .panel { margin-top: 16px; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 22px 28px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 22px 28px; justify-items: center;
+  }
+  .cell { text-align: center; }
   .cell .k { display: block; font-family: system-ui, sans-serif; font-size: 13px; color: var(--text-dim); margin-bottom: 5px; }
   .cell .v { font-size: 21px; color: var(--accent); font-variant-numeric: tabular-nums; }
   .summary {
@@ -223,7 +228,8 @@
 
   <header>
     <div class="eyebrow">UNOFFICIAL · COMMUNITY BUILT</div>
-    <div class="sub">An independent dashboard for time-locked staking on Ethereum, covering
+    <div class="sub">An independent dashboard for time-locked staking on
+      <span id="networkList">Ethereum</span>, covering
       <span id="assetList">a range of assets</span>. Prices come from public markets and staking
       data is read directly from the blockchain. Not affiliated with moretokens.com.</div>
     <h1 id="assetTitle">$MORE</h1>
@@ -345,7 +351,8 @@
   // and pointing assets at it — nothing below this block is chain-specific.
   const NETWORKS = {
     1: {
-      name: "Ethereum",
+      name: "Ethereum", short: "Ethereum",
+      native: { name: "Ether", symbol: "ETH", decimals: 18 },
       rpc: "https://ethereum-rpc.publicnode.com",
       // Event scanning needs eth_getLogs over wide block ranges, which many free
       // endpoints restrict far more tightly than ordinary calls. These are tried
@@ -359,6 +366,18 @@
       // DexScreener labels this chain "ethereum"; used to filter out pairs
       // for same-address tokens deployed on other chains.
       dexChain: "ethereum"
+    },
+    4663: {
+      name: "Robinhood Chain", short: "Robinhood",
+      // Arbitrum Orbit L2 settling to Ethereum; gas is paid in ETH, there is no
+      // native chain token. The public endpoint is rate limited and unguaranteed.
+      native: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpc: "https://rpc.mainnet.chain.robinhood.com",
+      explorer: "https://robinhoodchain.blockscout.com",
+      logRpcs: ["https://rpc.mainnet.chain.robinhood.com"],
+      // DexScreener's slug for this chain is unconfirmed, so pairs are matched on
+      // token address alone. If no pool is indexed, price simply shows as unknown.
+      dexChain: null
     }
   };
 
@@ -442,6 +461,13 @@
       burnAddress: "0x000000000000000000000000000000000000dEaD",
       staking: "0xfc7863c0caf560aC5e7FABa4537A9184911FD2b2",
       priceRef: "0xbEEf3bB9dA340EbdF0f5bae2E85368140d7D85D0",
+      stakeAbi: STAKING_ABI
+    },
+    {
+      key: "more-rh", chainId: 4663, kind: "erc20", label: "MORE", logo: LOGO_MORE,
+      token: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
+      staking: "0xCC22e7f65bEF29aa21f6F59b9363fdc26005dE31",
+      priceRef: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
       stakeAbi: STAKING_ABI
     },
     {
@@ -642,10 +668,16 @@
 
   // --- Asset switcher ---
   function renderTabs() {
+    // With more than one chain configured, the symbol alone is ambiguous —
+    // MORE exists on both Ethereum and Robinhood Chain.
+    const multiChain = new Set(Object.values(assets).map(a => a.chainId)).size > 1;
+
     $('assetTabs').innerHTML = Object.values(assets).map(a => {
       const cls = a.key === selectedKey ? "asset-tab active" : "asset-tab";
       const warn = !a.staking ? ` <span class="tab-flag">·</span>` : "";
-      return `<button class="${cls}" data-asset="${a.key}">${esc(a.meta.symbol)}${warn}</button>`;
+      const net = multiChain
+        ? ` <span class="tab-net">${esc(NETWORKS[a.chainId].short)}</span>` : "";
+      return `<button class="${cls}" data-asset="${a.key}">${esc(a.meta.symbol)}${net}${warn}</button>`;
     }).join("");
 
     $('assetTabs').querySelectorAll("button[data-asset]").forEach(btn => {
@@ -677,10 +709,15 @@
   // Only assets with a staking contract are advertised as stakeable — wstETH
   // drops off this list until its address is filled in.
   function paintIntro() {
-    const names = Object.values(assets).filter(a => a.staking).map(a => a.meta.symbol);
-    $('assetList').textContent = names.length === 0 ? "no assets yet"
-      : names.length === 1 ? names[0]
-      : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    const list = (xs) => xs.length === 0 ? "none"
+      : xs.length === 1 ? xs[0]
+      : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
+
+    const live = Object.values(assets).filter(a => a.staking);
+    // The same symbol on two chains should be named once.
+    $('assetList').textContent = list([...new Set(live.map(a => a.meta.symbol))]);
+    $('networkList').textContent = list(
+      [...new Set(live.map(a => NETWORKS[a.chainId].name))]);
   }
 
   function paintTitle() {
@@ -1267,21 +1304,47 @@
     }
   }
 
-  // Asks the wallet to switch networks if it isn't on the asset's chain.
+  // Asks the wallet to switch networks if it isn't on the asset's chain, and
+  // offers to add the network first if the wallet doesn't know it — which it
+  // won't for Robinhood Chain unless the user added it manually.
   async function ensureChain(chainId) {
+    const net = NETWORKS[chainId];
+    const hex = "0x" + chainId.toString(16);
     const current = parseInt(await window.ethereum.request({ method: "eth_chainId" }), 16);
     if (current === chainId) return true;
+
     try {
       await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x" + chainId.toString(16) }]
+        method: "wallet_switchEthereumChain", params: [{ chainId: hex }]
       });
-      return true;
     } catch (e) {
-      $('connectMsg').className = "msg error";
-      $('connectMsg').textContent = `Switch your wallet to ${NETWORKS[chainId].name}, then try again.`;
-      return false;
+      const unknownChain = e.code === 4902 || e.data?.originalError?.code === 4902;
+      if (!unknownChain) {
+        $('connectMsg').className = "msg error";
+        $('connectMsg').textContent = `Switch your wallet to ${net.name}, then try again.`;
+        return false;
+      }
+      try {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: hex,
+            chainName: net.name,
+            nativeCurrency: net.native,
+            rpcUrls: [net.rpc],
+            blockExplorerUrls: [net.explorer]
+          }]
+        });
+      } catch (addErr) {
+        $('connectMsg').className = "msg error";
+        $('connectMsg').textContent = `${net.name} isn't in your wallet and adding it was declined.`;
+        return false;
+      }
     }
+
+    // The signer is bound to the old network until it's rebuilt.
+    signer = new ethers.providers.Web3Provider(window.ethereum).getSigner();
+    return true;
   }
 
   async function onConnected() {
@@ -1590,7 +1653,11 @@
       account = ethers.utils.getAddress(accts[0]);
       onConnected();
     });
-    window.ethereum.on?.('chainChanged', () => window.location.reload());
+    window.ethereum.on?.('chainChanged', async () => {
+      if (!account) return;
+      signer = new ethers.providers.Web3Provider(window.ethereum).getSigner();
+      await Promise.all([refreshBalances(), refreshAllowance(), refreshMyStakes()]);
+    });
   }
 
   (async function init() {
