@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>$MORE — Unofficial Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg: #101714;
@@ -103,6 +106,15 @@
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     margin: 0; padding: 4px 8px; font-size: 12px; border-color: var(--line);
   }
+  .pct-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .pct-btn {
+    margin: 0; padding: 9px 10px; flex: 1 1 auto;
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    font-size: 10px; line-height: 1.4; letter-spacing: 0.02em;
+    border-color: var(--line); color: var(--text-dim);
+  }
+  .pct-btn:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+
   .hint { font-family: system-ui, sans-serif; font-size: 12px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
   .check {
     display: flex; align-items: center; gap: 9px; margin-top: 16px;
@@ -127,6 +139,7 @@
   .wallet-bar .addr { font-family: 'Courier New', monospace; color: var(--accent); }
   .wallet-bar button { margin-top: 0; }
   .wallet-balance { color: var(--text-dim); margin-top: 4px; }
+  .coin { height: 1.15em; width: auto; vertical-align: -0.2em; margin-left: 7px; }
 
   .verify {
     font-family: system-ui, sans-serif; font-size: 13px; color: var(--text-dim);
@@ -212,6 +225,13 @@
   .act-early:hover:not(:disabled) { background: rgba(235, 158, 138, 0.14); }
   .act-early[data-armed="1"] { background: rgba(235, 158, 138, 0.20); }
 
+  .pager {
+    display: flex; align-items: center; gap: 16px; margin-top: 18px;
+    font-family: system-ui, sans-serif; font-size: 13px;
+  }
+  .pager button { margin-top: 0; padding: 7px 14px; font-size: 13px; }
+  .pager-label { color: var(--text-dim); }
+
   .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; font-family: system-ui, sans-serif; font-size: 12px; color: var(--text-dim); }
   .legend span::before { content: "■"; margin-right: 6px; }
   .legend .l-ready::before { color: var(--green); }
@@ -269,7 +289,7 @@
     <h2>Contract Activity</h2>
     <div class="panel">
       <div class="wallet-bar">
-        <div class="msg">Stakes and unstakes on this asset's contract, newest first.</div>
+        <div class="msg">Every stake on this asset's contract, newest first, ten at a time.</div>
         <button id="activityBtn">Refresh</button>
       </div>
       <div id="activity"></div>
@@ -310,6 +330,12 @@
           <div class="amount-wrap">
             <input type="number" id="stakeAmount" placeholder="0.0" min="0" step="any">
             <button class="max-btn" id="maxBtn">Max</button>
+          </div>
+          <div class="pct-row" id="pctRow">
+            <button class="pct-btn" data-pct="10">10%</button>
+            <button class="pct-btn" data-pct="25">25%</button>
+            <button class="pct-btn" data-pct="50">50%</button>
+            <button class="pct-btn" data-pct="75">75%</button>
           </div>
         </div>
         <div class="field">
@@ -587,7 +613,9 @@
     if (!n) return "—";
     return new Date(n * 1000).toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' });
   };
-  const usd = (n) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const usd = (n) => "$" + n.toLocaleString(undefined, {
+    maximumFractionDigits: n !== 0 && Math.abs(n) < 100 ? 2 : 0
+  });
   const median = (xs) => {
     const v = xs.slice().sort((a, b) => a - b);
     const mid = Math.floor(v.length / 2);
@@ -743,7 +771,7 @@
     paintAssetNote();
     paintStakeForm();
     loadPoolStats();
-    loadActivity();
+    loadActivity(0);
     if (account) {
       paintBalance();
       refreshMyStakes();
@@ -959,7 +987,7 @@
       if (s.error) continue;
       asset = s.asset;
       principal = principal.add(s.info.amount);        // every stake ever opened
-      claimed = claimed.add(s.info.claimed);
+      claimed = claimed.add(rewardPortion(s.info));
       penalty = penalty.add(s.info.penalty);
       if (s.info.status) { locked = locked.add(s.info.amount); open++; }
       if (s.pending) pending = pending.add(s.pending);
@@ -1003,7 +1031,14 @@
   const ZERO = () => ethers.BigNumber.from(0);
 
   // Per-row figures: total rewards on a stake, its combined worth, and its return.
-  const rowRewards = (s) => s.info.claimed.add(s.pending || ZERO());
+  // On a CLOSED stake, `claimed` is the whole payout — returned principal
+  // included — so the reward portion is only what exceeded the original amount.
+  // On an open stake nothing has been returned yet, so claimed is pure reward.
+  function rewardPortion(info) {
+    if (info.status) return info.claimed;
+    return info.claimed.gt(info.amount) ? info.claimed.sub(info.amount) : ZERO();
+  }
+  const rowRewards = (s) => rewardPortion(s.info).add(s.pending || ZERO());
   const rowNet = (s) => rowRewards(s).sub(s.info.penalty);   // penalties reduce the return
   function rowCombinedUsd(s) {
     const a = s.asset;
@@ -1074,8 +1109,9 @@
         const cls = unstakeState(s) === "late" ? "overdue" : "muted";
         return `${date} <span class="${cls}">+${over}d</span>`;
       } },
-    { key: "claimed", label: "Claimed", num: true, sort: s => toFloat(s.info.claimed, s.asset),
-      cell: s => fmt(s.info.claimed, s.asset, 4) },
+    { key: "claimed", label: "Claimed", num: true,
+      sort: s => toFloat(rewardPortion(s.info), s.asset),
+      cell: s => fmt(rewardPortion(s.info), s.asset, 4) },
     { key: "penalty", label: "Penalty", num: true, sort: s => toFloat(s.info.penalty, s.asset),
       cell: s => s.info.penalty.isZero() ? "—" : fmt(s.info.penalty, s.asset, 4) },
     { key: "action",  label: "", nosort: true, cell: actionCell }
@@ -1218,76 +1254,17 @@
   }
 
   // ================= Contract activity =================
-  // Public RPCs cap eth_getLogs ranges, so history is walked backwards in chunks
-  // rather than asked for in one go — a single rejected range used to collapse
-  // the window to a few hours, which showed only whoever staked most recently.
-  const ACTIVITY_MAX_SPAN = 300000;  // how far back to look, ~6 weeks on mainnet
-  const ACTIVITY_CHUNK = 10000;      // starting blocks per request
-  const ACTIVITY_MAX_REQUESTS = 12;  // free RPCs rate-limit; don't machine-gun them
-  const ACTIVITY_MAX_ROWS = 30;
+  // Stake records are addressable by ID, so the feed walks stakeIDCounter
+  // backwards a page at a time. No eth_getLogs, which several of these chains'
+  // public endpoints won't serve over useful ranges. The tradeoff is that
+  // records carry no transaction hash.
+  const ACTIVITY_PAGE_SIZE = 10;
+  let activityPage = 0;
 
-  // Endpoints are tried in turn until one serves a log query.
-  async function scanEvents(a, latest) {
-    const net = NETWORKS[a.chainId];
-    const endpoints = net.logRpcs && net.logRpcs.length ? net.logRpcs : [net.rpc];
-    let lastErr = null;
-
-    for (const url of endpoints) {
-      const result = await scanVia(url, a, latest);
-      if (result.staked.length + result.unstaked.length > 0 || !result.lastErr) return result;
-      lastErr = result.lastErr;
-    }
-    return { staked: [], unstaked: [], scannedFrom: latest, lastErr, requests: 0 };
-  }
-
-  async function scanVia(url, a, latest) {
-    const provider = new ethers.providers.JsonRpcProvider(url);
-    const iface = a.staking.interface;
-    // Both events in one request instead of two — halves the call count.
-    const topics = [[iface.getEventTopic("Staked"), iface.getEventTopic("Unstaked")]];
-
-    const floor = Math.max(0, latest - ACTIVITY_MAX_SPAN);
-    const staked = [], unstaked = [];
-    let chunk = ACTIVITY_CHUNK, to = latest, scannedFrom = latest;
-    let requests = 0, lastErr = null;
-
-
-    while (to > floor
-           && staked.length + unstaked.length < ACTIVITY_MAX_ROWS * 3
-           && requests < ACTIVITY_MAX_REQUESTS) {
-      const from = Math.max(floor, to - chunk + 1);
-      try {
-        requests++;
-        const logs = await provider.getLogs({
-          address: a.staking.address, topics, fromBlock: from, toBlock: to
-        });
-        for (const log of logs) {
-          const parsed = iface.parseLog(log);
-          (parsed.name === "Staked" ? staked : unstaked).push({
-            args: parsed.args, blockNumber: log.blockNumber,
-            logIndex: log.logIndex, transactionHash: log.transactionHash
-          });
-        }
-        scannedFrom = from;
-        to = from - 1;
-      } catch (e) {
-        lastErr = e;
-        // Some endpoints allow only a few hundred blocks per call, so keep
-        // narrowing well below the starting chunk before giving up.
-        if (chunk > 100) { chunk = Math.max(100, Math.floor(chunk / 4)); continue; }
-        break;   // keep whatever was already collected rather than failing outright
-      }
-    }
-    return { staked, unstaked, scannedFrom, lastErr, requests };
-  }
-
-  // The Staked event carries duration, but its unit isn't knowable from the ABI —
-  // stake() takes days while timestamps are seconds, so pick whichever reading
-  // isn't absurd. Anything above a century is clearly seconds.
-  function durationToDays(raw) {
-    const n = Number(raw.toString());
-    if (!n) return null;
-    return n > 36500 ? Math.round(n / 86400) : n;
+  function activityCombined(r) {
+    const a = r.asset;
+    if (!r.amount || a.price == null) return null;
+    return (toFloat(r.amount, a) + (r.rewards ? toFloat(r.rewards, a) : 0)) * a.price;
   }
 
   const ACTIVITY_COLUMNS = [
@@ -1303,9 +1280,7 @@
     { key: "value", label: "Value", num: true,
       sort: r => (r.amount && r.asset.price != null) ? toFloat(r.amount, r.asset) * r.asset.price : -1,
       cell: r => (r.amount && r.asset.price != null)
-        ? "$" + (toFloat(r.amount, r.asset) * r.asset.price)
-            .toLocaleString(undefined, { maximumFractionDigits: 2 })
-        : `<span class="muted">—</span>` },
+        ? money(toFloat(r.amount, r.asset) * r.asset.price) : `<span class="muted">—</span>` },
     { key: "rewards", label: "Rewards", num: true,
       sort: r => r.rewards ? toFloat(r.rewards, r.asset) : -1,
       cell: r => r.rewards ? fmt(r.rewards, r.asset, 4) : `<span class="muted">—</span>` },
@@ -1325,105 +1300,97 @@
       cell: r => r.time ? new Date(r.time * 1000).toLocaleString(undefined,
         { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
     { key: "tx", label: "Tx", nosort: true,
-      cell: r => `<a href="${explorerFor(r.asset.chainId)}/tx/${r.hash}" target="_blank" rel="noopener">view</a>` }
+      cell: r => `<a href="${explorerFor(r.asset.chainId)}/address/${r.asset.staking.address}" target="_blank" rel="noopener">contract</a>` }
   ];
 
-  function activityCombined(r) {
-    const a = r.asset;
-    if (!r.amount || a.price == null) return null;
-    return (toFloat(r.amount, a) + (r.rewards ? toFloat(r.rewards, a) : 0)) * a.price;
+  // One row per stake record. A closed record is shown as its exit, timed by
+  // claimTime; an open one as its opening, timed by startTime.
+  function recordToRow(a, id, info, pending) {
+    const start = info.startTime.toNumber(), end = info.endTime.toNumber();
+    return {
+      kind: info.status ? "stake" : "unstake",
+      asset: a,
+      stakeId: ethers.BigNumber.from(id),
+      staker: info.staker,
+      amount: info.amount,
+      days: (start && end && end > start) ? Math.round((end - start) / 86400) : null,
+      rewards: info.status ? pending : rewardPortion(info),
+      time: info.status ? start : (info.claimTime.toNumber() || start)
+    };
   }
 
-  async function loadActivity() {
+  async function loadActivity(page = 0) {
     const a = selected();
     const el = $('activity');
+    const btn = $('activityBtn');
 
     if (!a.staking) {
       el.innerHTML = `<p class="msg">No staking contract configured for this asset.</p>`;
       return;
     }
 
-    el.innerHTML = `<p class="msg">Scanning recent blocks…</p>`;
-    const btn = $('activityBtn');
+    activityPage = Math.max(0, page);
+    el.innerHTML = `<p class="msg">Reading stake records…</p>`;
     btn.disabled = true;
 
     try {
-      const provider = providerFor(a.chainId);
-      const latest = await provider.getBlockNumber();
-      const { staked, unstaked, scannedFrom, lastErr } = await scanEvents(a, latest);
-      const found = staked.length + unstaked.length;
-
-      // Nothing at all and an error means the scan genuinely failed — say why.
-      if (found === 0 && lastErr) throw lastErr;
-
-      let rows = [
-        ...staked.map(ev => ({
-          kind: "stake", asset: a, stakeId: ev.args.stakeId, staker: ev.args.staker,
-          amount: ev.args.amount, days: durationToDays(ev.args.duration),
-          block: ev.blockNumber, index: ev.logIndex, hash: ev.transactionHash
-        })),
-        ...unstaked.map(ev => ({
-          kind: "unstake", asset: a, stakeId: ev.args.stakeId,
-          block: ev.blockNumber, index: ev.logIndex, hash: ev.transactionHash
-        }))
-      ]
-        .sort((x, y) => y.block - x.block || y.index - x.index)
-        .slice(0, ACTIVITY_MAX_ROWS);
-
-      if (rows.length === 0) {
-        el.innerHTML = `<p class="msg">No stakes or unstakes between blocks
-          ${scannedFrom.toLocaleString()} and ${latest.toLocaleString()}.</p>`;
+      const counter = await a.staking.stakeIDCounter();
+      const top = counter.toNumber();
+      if (!top) {
+        el.innerHTML = `<p class="msg">No stakes have been opened on this contract yet.</p>`;
         return;
       }
 
-      // Every row needs its stake record now: Unstaked carries only the ID, and
-      // the rewards figure isn't in either event. Open stakes report what's
-      // accrued so far; closed ones report what was actually paid out.
-      await mapLimit(rows, 3, async (r) => {
-        try {
-          const info = await a.staking.getStakeInfo(r.stakeId);
-          r.staker = r.staker || info.staker;
-          r.amount = r.amount || info.amount;
-          if (!r.days) {
-            const start = info.startTime.toNumber(), end = info.endTime.toNumber();
-            r.days = (start && end && end > start) ? Math.round((end - start) / 86400) : null;
-          }
-          r.rewards = info.status
-            ? await a.staking.earned(r.stakeId).catch(() => null)
-            : info.claimed;
-        } catch (e) { /* row still renders with dashes */ }
-      });
+      // Newest IDs first, walking backwards from the counter.
+      const from = top - activityPage * ACTIVITY_PAGE_SIZE;
+      if (from < 1) { await loadActivity(0); return; }
 
-      // One getBlock per distinct block, not per row.
-      const blocks = [...new Set(rows.map(r => r.block))];
-      const times = {};
-      await mapLimit(blocks, 4, async (n) => {
-        try { times[n] = (await provider.getBlock(n)).timestamp; } catch (e) { /* leave blank */ }
-      });
-      rows.forEach(r => { r.time = times[r.block]; });
+      const ids = [];
+      for (let i = from; i > 0 && ids.length < ACTIVITY_PAGE_SIZE; i--) ids.push(i);
+
+      const rows = (await mapLimit(ids, 3, async (id) => {
+        try {
+          const info = await a.staking.getStakeInfo(id);
+          if (!info.startTime.toNumber()) return null;        // ID never used
+          const pending = info.status
+            ? await a.staking.earned(id).catch(() => null)
+            : null;
+          return recordToRow(a, id, info, pending);
+        } catch (e) { return null; }
+      })).filter(Boolean);
+
+      if (rows.length === 0) {
+        el.innerHTML = `<p class="msg">No readable stake records on this page.</p>`;
+        return;
+      }
+
+      const first = ids[ids.length - 1], last = ids[0];
+      const hasNext = first > 1;
+      const hasPrev = activityPage > 0;
 
       renderTable(rows, el, {
         columns: ACTIVITY_COLUMNS,
         defaultSort: { key: "when", dir: "desc" },
         rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
-        hint: `${found.toLocaleString()} event${found === 1 ? "" : "s"} from every wallet, across blocks
-          ${scannedFrom.toLocaleString()}–${latest.toLocaleString()}${found > rows.length
-            ? `, showing the ${rows.length} most recent` : ""}${lastErr
-            ? " (scan stopped early — the RPC refused a range)" : ""}. Values use the current
-          price, not the price when the event happened; rewards are accrued-to-date for open
-          stakes and paid-out totals for closed ones. Click a column heading to sort.`
+        hint: `Stakes #${first}–#${last} of ${top} opened on this contract, newest first.
+          Read from stake records, so transaction links aren't available.`
       });
+
+      el.insertAdjacentHTML("beforeend", `
+        <div class="pager">
+          <button id="actPrev" ${hasPrev ? "" : "disabled"}>← Newer</button>
+          <span class="pager-label">Page ${activityPage + 1} of ${Math.ceil(top / ACTIVITY_PAGE_SIZE)}</span>
+          <button id="actNext" ${hasNext ? "" : "disabled"}>Older →</button>
+        </div>`);
+
+      $('actPrev').addEventListener('click', () => loadActivity(activityPage - 1));
+      $('actNext').addEventListener('click', () => loadActivity(activityPage + 1));
     } catch (e) {
-      const why = esc(e.reason || e.error?.message || e.message || String(e)).slice(0, 200);
-      el.innerHTML = `<p class="msg error">Couldn't read contract events from
-        ${esc(NETWORKS[a.chainId].rpc)}.<br>${why}</p>
-        <p class="hint">Public RPCs often restrict eth_getLogs. Swapping the
-        <code>rpc</code> for this network in the config usually fixes it.</p>`;
+      el.innerHTML = `<p class="msg error">Couldn't read stake records: ${esc(e.reason || e.message || e)}</p>`;
     } finally {
       btn.disabled = false;
     }
   }
-
   // ================= Wallet =================
   async function connect() {
     const btn = $('connectBtn');
@@ -1530,9 +1497,10 @@
     const a = selected();
     const bal = balances[a.key];
     if (!bal) { $('walletBalance').textContent = "Balance unavailable"; return; }
-    const line = fmt(bal, a, 4) + " " + a.meta.symbol;
-    $('walletBalance').textContent = a.price != null
-      ? line + " · " + usd(toFloat(bal, a) * a.price)
+    const mark = a.logo ? `<img class="coin" src="${a.logo}" alt="">` : "";
+    const line = `${fmt(bal, a, 4)} ${esc(a.meta.symbol)}${mark}`;
+    $('walletBalance').innerHTML = a.price != null
+      ? `${line} · ${usd(toFloat(bal, a) * a.price)}`
       : line;
   }
 
@@ -1557,6 +1525,8 @@
     const ready = Boolean(a.staking && a.stakeAbi);
     $('stakeBtn').disabled = !ready;
     $('stakeAmount').disabled = !ready;
+    $('maxBtn').disabled = !ready;
+    document.querySelectorAll('.pct-btn').forEach(b => { b.disabled = !ready; });
     $('stakeDays').disabled = !ready;
     $('approveHint').textContent = a.kind === "erc20"
       ? "First-time staking needs an approval transaction, then a second to open the stake."
@@ -1784,7 +1754,18 @@
   $('stakeDays').addEventListener('input', updateUnlockPreview);
   $('stakeAmount').addEventListener('input', updateStakeButton);
   $('exactApproval').addEventListener('change', updateStakeButton);
-  $('activityBtn').addEventListener('click', loadActivity);
+  $('activityBtn').addEventListener('click', () => loadActivity(activityPage));
+  $('pctRow').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-pct]');
+    if (!btn || btn.disabled) return;
+    const a = selected();
+    const bal = balances[a.key];
+    if (!bal) return;
+    const amount = bal.mul(Number(btn.dataset.pct)).div(100);
+    $('stakeAmount').value = ethers.utils.formatUnits(amount, a.meta.decimals);
+    updateStakeButton();          // the amount changed, so the allowance might not cover it
+  });
+
   $('maxBtn').addEventListener('click', async () => {
     const a = selected();
     const bal = balances[a.key];
@@ -1802,6 +1783,7 @@
       }
     }
     $('stakeAmount').value = ethers.utils.formatUnits(usable, a.meta.decimals);
+    updateStakeButton();
   });
 
   if (window.ethereum) {
