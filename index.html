@@ -143,6 +143,37 @@
   .wallet-balance { color: var(--text-dim); margin-top: 4px; }
   .coin { height: 1.15em; width: auto; vertical-align: -0.2em; margin-left: 7px; }
 
+  .portfolio-total {
+    font-size: 30px; color: var(--accent); font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+  }
+  .holding {
+    display: flex; align-items: center; gap: 12px; padding: 12px 0;
+    border-bottom: 1px solid rgba(53, 69, 59, 0.6);
+    font-family: system-ui, sans-serif; font-size: 14px;
+  }
+  .holding:last-child { border-bottom: none; }
+  .holding img { height: 26px; width: auto; flex: 0 0 auto; }
+  .holding .sym { min-width: 74px; color: var(--text); }
+  .holding .net { color: var(--text-dim); font-size: 12px; flex: 1 1 auto; }
+  .holding .tokens { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .holding .val {
+    color: var(--accent); font-variant-numeric: tabular-nums;
+    min-width: 90px; text-align: right;
+  }
+  .holding.empty .sym, .holding.empty .val { color: var(--text-dim); }
+  /* keeps the row aligned when a logo is withheld */
+  .holding .no-logo { width: 26px; flex: 0 0 auto; }
+
+  .contracts {
+    margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line);
+    font-family: system-ui, sans-serif; font-size: 13px;
+  }
+  .contract-head { color: var(--text-dim); margin-bottom: 12px; }
+  .contract-row { display: flex; gap: 14px; align-items: baseline; padding: 5px 0; flex-wrap: wrap; }
+  .contract-row .k { color: var(--text-dim); min-width: 62px; }
+  .contract-row a { font-family: 'Courier New', monospace; word-break: break-all; }
+
   .verify {
     font-family: system-ui, sans-serif; font-size: 13px; color: var(--text-dim);
     border-left: 2px solid var(--accent-dim); padding-left: 14px; line-height: 1.6; margin-bottom: 22px;
@@ -188,16 +219,13 @@
   .detail-list .ticker { color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em; }
   .detail-list .row-closed td { color: var(--text-dim); }
   .detail-list .row-error td { color: var(--red); }
-  .detail-list tfoot td {
-    border-bottom: none; border-top: 1px solid var(--accent-dim);
-    padding-top: 14px; white-space: normal;
-  }
-  .foot-stats {
+  .list-stats {
     display: flex; flex-wrap: wrap; gap: 10px 30px;
+    margin: 4px 0 6px; padding-bottom: 18px;
+    border-bottom: 1px solid var(--accent-dim);
     font-family: system-ui, sans-serif; font-size: 13px; color: var(--accent);
-    text-align: left;
   }
-  .foot-stats em {
+  .list-stats em {
     display: block; font-style: normal; font-size: 11px;
     color: var(--text-dim); margin-bottom: 3px;
   }
@@ -211,7 +239,7 @@
   .st-unlocked::before { background: var(--green); }
   .st-closed::before { background: var(--text-dim); opacity: 0.5; }
   .ev-stake::before { background: var(--green); }
-  .ev-unstake::before { background: var(--accent-dim); }
+  .ev-unstake::before { background: var(--amber); }
   .detail-list th.nosort { cursor: default; }
   .detail-list th.nosort:hover { color: var(--text-dim); }
 
@@ -226,6 +254,28 @@
   .act-early { border-color: var(--red); color: var(--red); }
   .act-early:hover:not(:disabled) { background: rgba(235, 158, 138, 0.14); }
   .act-early[data-armed="1"] { background: rgba(235, 158, 138, 0.20); }
+
+  /* Separate buttons rather than a shared edge — a joined pair leaves the
+     active one missing a border on one side and fights the focus ring. */
+  .seg { display: flex; gap: 8px; margin-top: 16px; }
+  .seg-btn {
+    margin: 0; padding: 8px 16px; font-size: 13px;
+    border: 1px solid var(--line); color: var(--text-dim);
+  }
+  /* Focus ring takes the button's own colour and sits on the border, so it
+     reads as one box instead of a second rectangle outside the first. */
+  .seg-btn:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
+  .seg-btn:hover:not(.active) { color: var(--text); }
+  .seg-btn[data-kind="stake"]:hover:not(.active) { color: var(--green); }
+  .seg-btn[data-kind="unstake"]:hover:not(.active) { color: var(--amber); }
+  .seg-btn[data-kind="stake"].active {
+    color: var(--green); border-color: var(--green);
+    background: rgba(178, 229, 186, 0.12);
+  }
+  .seg-btn[data-kind="unstake"].active {
+    color: var(--amber); border-color: var(--amber);
+    background: rgba(224, 179, 88, 0.14);
+  }
 
   .pager {
     display: flex; align-items: center; gap: 16px; margin-top: 18px;
@@ -284,6 +334,7 @@
         <div class="cell" id="burnCell" style="display:none"><span class="k">Burned</span><span class="v" id="burned">—</span><span class="note" id="burnedNote"></span></div>
       </div>
       <div class="msg" id="poolMsg" style="margin-top:18px;">Reading from chain…</div>
+      <div class="contracts" id="contracts"></div>
     </div>
   </section>
 
@@ -293,6 +344,10 @@
       <div class="wallet-bar">
         <div class="msg">Every stake on this asset's contract, newest first, ten at a time.</div>
         <button id="activityBtn">Refresh</button>
+      </div>
+      <div class="seg" id="actFilter">
+        <button class="seg-btn active" data-kind="stake">Stakes</button>
+        <button class="seg-btn" data-kind="unstake">Unstakes</button>
       </div>
       <div id="activity"></div>
     </div>
@@ -316,6 +371,17 @@
       </div>
       <div id="myStakes"></div>
       <div class="tx-status" id="unstakeStatus"></div>
+    </div>
+
+    <div class="panel hidden" id="portfolioPanel">
+      <div class="wallet-bar">
+        <div>
+          <span class="k">Total value staked</span>
+          <div class="portfolio-total" id="portfolioTotal">—</div>
+        </div>
+        <button id="portfolioBtn">Refresh</button>
+      </div>
+      <div id="portfolio"></div>
     </div>
 
     <div class="panel hidden" id="stakePanel">
@@ -411,11 +477,23 @@
       // native chain token. The public endpoint is rate limited and unguaranteed.
       native: { name: "Ether", symbol: "ETH", decimals: 18 },
       rpc: "https://rpc.mainnet.chain.robinhood.com",
-      explorer: "https://robinhoodchain.blockscout.com", explorerName: "Robinhood Blockscout",
-      logRpcs: ["https://rpc.mainnet.chain.robinhood.com"],
+      explorer: "https://robin.etherscan.io", explorerName: "Robin Etherscan",
+      logRpcs: ["https://rpc.mainnet.chain.robinhood.com"],   // no alternate known
       // DexScreener's slug for this chain is unconfirmed, so pairs are matched on
       // token address alone. If no pool is indexed, price simply shows as unknown.
       dexChain: null
+    },
+    43114: {
+      name: "Avalanche C-Chain", short: "Avalanche",
+      native: { name: "Avalanche", symbol: "AVAX", decimals: 18 },
+      rpc: "https://api.avax.network/ext/bc/C/rpc",
+      explorer: "https://snowtrace.io", explorerName: "Snowtrace",
+      logRpcs: [
+        "https://api.avax.network/ext/bc/C/rpc",
+        "https://avalanche-c-chain-rpc.publicnode.com",
+        "https://avalanche.drpc.org"
+      ],
+      dexChain: "avalanche"
     },
     369: {
       name: "PulseChain", short: "PulseChain",
@@ -530,6 +608,17 @@
       initialSupply: 1000000000,
       staking: "0xCC22e7f65bEF29aa21f6F59b9363fdc26005dE31",
       priceRef: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
+      stakeAbi: STAKING_ABI
+    },
+    {
+      key: "more-avax", chainId: 43114, kind: "erc20", label: "MORE",
+      logo: LOGO_MORE, wordmark: true,
+      token: "0xb2722d5f1b8F3E19bf026c62C47C1C7BC1CDB04E",
+      // Same staking address as Ethereum — deployed from the same account and
+      // nonce, so the contract lands identically on both chains.
+      staking: "0xfc7863c0caf560aC5e7FABa4537A9184911FD2b2",
+      burnAddress: "0x000000000000000000000000000000000000dEaD",
+      priceRef: "0xb2722d5f1b8F3E19bf026c62C47C1C7BC1CDB04E",
       stakeAbi: STAKING_ABI
     },
     {
@@ -770,6 +859,7 @@
     renderTabs();
     paintTitle();
     paintPrice();
+    paintContracts();
     paintAssetNote();
     paintStakeForm();
     loadPoolStats();
@@ -804,6 +894,30 @@
     $('assetTitle').innerHTML = a.logo
       ? `<img class="brand" src="${a.logo}" alt="${esc(a.meta.symbol)}">`
       : "$" + esc(a.meta.symbol);
+  }
+
+  // Both addresses for the selected asset, each linked to its own chain's
+  // explorer — Etherscan, Robin Etherscan or the PulseChain IPFS scanner.
+  function paintContracts() {
+    const a = selected();
+    const net = NETWORKS[a.chainId];
+    const link = (addr) =>
+      `<a href="${explorerFor(a.chainId)}/address/${addr}" target="_blank" rel="noopener">${esc(addr)}</a>`;
+
+    const rows = [];
+    rows.push(a.kind === "native"
+      ? `<div class="contract-row"><span class="k">Token</span>
+           <span class="muted">${esc(a.meta.symbol)} is this chain's native currency — no contract</span></div>`
+      : `<div class="contract-row"><span class="k">Token</span>${link(a.token.address)}</div>`);
+
+    rows.push(a.staking
+      ? `<div class="contract-row"><span class="k">Staking</span>${link(a.staking.address)}</div>`
+      : `<div class="contract-row"><span class="k">Staking</span>
+           <span class="muted">not configured</span></div>`);
+
+    $('contracts').innerHTML =
+      `<div class="contract-head">Contracts on ${esc(net.name)} · ${esc(net.explorerName)}</div>`
+      + rows.join("");
   }
 
   function paintAssetNote() {
@@ -1182,11 +1296,9 @@
     }).join("");
 
     const stats = opts.stats ? opts.stats(stakes) : null;
-    const foot = !stats ? "" : `
-      <tr><td colspan="${cols.length}">
-        <div class="foot-stats">${stats.map(([k, v]) =>
-          `<span><em>${esc(k)}</em>${v}</span>`).join("")}</div>
-      </td></tr>`;
+    const statsBlock = !stats ? "" : `
+      <div class="list-stats">${stats.map(([k, v]) =>
+        `<span><em>${esc(k)}</em>${v}</span>`).join("")}</div>`;
 
     const toggle = !opts.onToggleClosed ? "" : `
       <label class="check closed-toggle">
@@ -1202,11 +1314,11 @@
       </div>` : "";
 
     container.innerHTML = `
+      ${statsBlock}
       <div class="detail-list-wrap">
         <table class="detail-list">
           <thead><tr>${head}</tr></thead>
           <tbody>${body}</tbody>
-          ${foot ? `<tfoot>${foot}</tfoot>` : ""}
         </table>
       </div>
       ${toggle}
@@ -1288,6 +1400,10 @@
   // records carry no transaction hash.
   const ACTIVITY_PAGE_SIZE = 10;
   let activityPage = 0;
+  let activityFilter = "stake";      // stake | unstake
+  let activityRows = [];             // the current page, already filtered
+  let activityMeta = null;
+  let activityStack = [];            // starting ID per page, so Newer can go back
 
   function activityCombined(r) {
     const a = r.asset;
@@ -1328,23 +1444,166 @@
       cell: r => r.time ? new Date(r.time * 1000).toLocaleString(undefined,
         { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
     { key: "tx", label: "Tx", nosort: true,
-      cell: r => `<a href="${explorerFor(r.asset.chainId)}/address/${r.asset.staking.address}" target="_blank" rel="noopener">contract</a>` }
+      cell: r => r.hash
+        ? `<a href="${explorerFor(r.asset.chainId)}/tx/${r.hash}" target="_blank" rel="noopener">${esc(r.hash.slice(0, 8))}…</a>`
+        : `<a href="${explorerFor(r.asset.chainId)}/address/${r.asset.staking.address}" target="_blank" rel="noopener">contract</a>` }
   ];
 
   // One row per stake record. A closed record is shown as its exit, timed by
   // claimTime; an open one as its opening, timed by startTime.
+  // `status` alone isn't reliable across these contracts — some leave it set
+  // after an exit. A non-zero claimTime is direct evidence the stake was closed,
+  // so either signal counts.
+  function isClosed(info) {
+    return info.status === false || info.claimTime.toNumber() > 0;
+  }
+
   function recordToRow(a, id, info, pending) {
     const start = info.startTime.toNumber(), end = info.endTime.toNumber();
+    const closed = isClosed(info);
+    // Some contracts zero the principal when a stake is closed. Zero is not a
+    // real amount, so blank it rather than printing 0 and a $0 value.
+    const amount = info.amount.isZero() ? null : info.amount;
+    const rewards = closed ? rewardPortion(info) : pending;
+
     return {
-      kind: info.status ? "stake" : "unstake",
+      kind: closed ? "unstake" : "stake",
       asset: a,
       stakeId: ethers.BigNumber.from(id),
       staker: info.staker,
-      amount: info.amount,
+      amount,
       days: (start && end && end > start) ? Math.round((end - start) / 86400) : null,
-      rewards: info.status ? pending : rewardPortion(info),
-      time: info.status ? start : (info.claimTime.toNumber() || start)
+      rewards: rewards && !rewards.isZero() ? rewards : null,
+      time: closed ? (info.claimTime.toNumber() || start) : start
     };
+  }
+
+  // A page is ten MATCHING records, not ten IDs — otherwise filtering to
+  // unstakes shows an empty page whenever the newest ten happen to be open.
+  const ACTIVITY_BATCH = 20;      // IDs read per round trip while searching
+  const ACTIVITY_MAX_SCAN = 300;  // ceiling per page, so a sparse filter can't run away
+
+  async function collectPage(a, startId, filter, size) {
+    const rows = [];
+    let cursor = startId, scanned = 0, lastSeen = startId, exhausted = false;
+    let readable = 0, otherKind = 0;   // what the scan actually saw
+
+    while (cursor > 0 && rows.length < size && scanned < ACTIVITY_MAX_SCAN) {
+      const batch = [];
+      for (let i = cursor; i > 0 && batch.length < ACTIVITY_BATCH; i--) batch.push(i);
+      scanned += batch.length;
+
+      const recs = await mapLimit(batch, 3, async (id) => {
+        try {
+          const info = await a.staking.getStakeInfo(id);
+          const unused = info.staker === ethers.constants.AddressZero
+            && info.startTime.isZero() && info.amount.isZero();
+          if (unused) return null;
+          const pending = isClosed(info)
+            ? null
+            : await a.staking.earned(id).catch(() => null);
+          return recordToRow(a, id, info, pending);
+        } catch (e) { return null; }
+      });
+
+      for (let i = 0; i < batch.length; i++) {
+        lastSeen = batch[i];
+        const row = recs[i];
+        if (row) { readable++; if (row.kind !== filter) otherKind++; }
+        if (row && row.kind === filter) {
+          rows.push(row);
+          if (rows.length === size) break;
+        }
+      }
+      cursor = lastSeen - 1;
+      if (cursor < 1) exhausted = true;
+    }
+
+    return {
+      rows, readable, otherKind,
+      nextStart: cursor,
+      from: lastSeen,
+      to: startId,
+      // Stopped on the scan ceiling rather than running out of records.
+      capped: !exhausted && rows.length < size && scanned >= ACTIVITY_MAX_SCAN
+    };
+  }
+
+  // stakeId is an indexed topic on both events, so one query filtered to this
+  // page's IDs returns just those logs — no block range to be refused. Endpoints
+  // that still say no leave the rows without hashes rather than failing.
+  async function attachTxHashes(a, rows) {
+    if (!rows.length) return;
+    const net = NETWORKS[a.chainId];
+    const iface = a.staking.interface;
+    const idTopics = rows.map(r => ethers.utils.hexZeroPad(r.stakeId.toHexString(), 32));
+    const query = {
+      address: a.staking.address,
+      topics: [
+        [iface.getEventTopic("Staked"), iface.getEventTopic("Unstaked")],
+        idTopics
+      ],
+      fromBlock: 0, toBlock: "latest"
+    };
+
+    // Endpoints differ on whether they'll serve fromBlock 0, even with a tight
+    // topic filter, so work through the list until one does.
+    const endpoints = net.logRpcs && net.logRpcs.length ? net.logRpcs : [net.rpc];
+    for (const url of endpoints) {
+      try {
+        const logs = await new ethers.providers.JsonRpcProvider(url).getLogs(query);
+        const found = {};
+        for (const log of logs) {
+          const parsed = iface.parseLog(log);
+          found[`${parsed.name}:${parsed.args.stakeId.toString()}`] = log.transactionHash;
+        }
+        for (const r of rows) {
+          const name = r.kind === "stake" ? "Staked" : "Unstaked";
+          r.hash = found[`${name}:${r.stakeId.toString()}`] || null;
+        }
+        if (rows.some(r => r.hash)) return;   // got something; stop here
+      } catch (e) {
+        // try the next endpoint
+      }
+    }
+  }
+
+  function paintActivity() {
+    const el = $('activity');
+    if (!activityMeta) return;
+    const { top, from, to, nextStart, capped, readable, otherKind } = activityMeta;
+
+    const pager = `
+      <div class="pager">
+        <button id="actPrev" ${activityPage > 0 ? "" : "disabled"}>← Newer</button>
+        <span class="pager-label">Page ${activityPage + 1}</span>
+        <button id="actNext" ${nextStart >= 1 ? "" : "disabled"}>Older →</button>
+      </div>`;
+
+    if (activityRows.length === 0) {
+      const what = activityFilter === "stake" ? "open stakes" : "unstaked positions";
+      const other = activityFilter === "stake" ? "were already closed" : "are still open";
+      el.innerHTML = `<p class="msg">No ${what} among stakes #${from}–#${to}.
+        ${readable} record${readable === 1 ? "" : "s"} read here${otherKind
+          ? `, and all ${otherKind === readable ? "of them" : otherKind} ${other}` : ""}.
+        ${capped ? `Stopped after ${ACTIVITY_MAX_SCAN} records — keep going with Older.`
+                 : ""}</p>${pager}`;
+    } else {
+      const label = activityFilter === "stake" ? "open stakes" : "unstaked positions";
+      el.innerHTML = "";
+      renderTable(activityRows, el, {
+        columns: ACTIVITY_COLUMNS,
+        defaultSort: { key: "when", dir: "desc" },
+        rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
+        hint: `${activityRows.length} ${label} from stakes #${from}–#${to}, of ${top}
+          opened on this contract.${activityRows.some(r => r.hash) ? ""
+            : " This endpoint wouldn't return event logs, so transaction hashes aren't available."}`
+      });
+      el.insertAdjacentHTML("beforeend", pager);
+    }
+
+    $('actPrev').addEventListener('click', () => loadActivity(activityPage - 1));
+    $('actNext').addEventListener('click', () => loadActivity(activityPage + 1));
   }
 
   async function loadActivity(page = 0) {
@@ -1369,50 +1628,21 @@
         return;
       }
 
-      // Newest IDs first, walking backwards from the counter.
-      const from = top - activityPage * ACTIVITY_PAGE_SIZE;
-      if (from < 1) { await loadActivity(0); return; }
+      // Each page records where it started, so Newer can go back to it. A
+      // filtered page spans a variable number of IDs, so it can't be computed.
+      if (activityPage === 0) activityStack = [top];
+      const startId = activityStack[activityPage];
+      if (startId == null || startId < 1) { await loadActivity(0); return; }
 
-      const ids = [];
-      for (let i = from; i > 0 && ids.length < ACTIVITY_PAGE_SIZE; i--) ids.push(i);
-
-      const rows = (await mapLimit(ids, 3, async (id) => {
-        try {
-          const info = await a.staking.getStakeInfo(id);
-          if (!info.startTime.toNumber()) return null;        // ID never used
-          const pending = info.status
-            ? await a.staking.earned(id).catch(() => null)
-            : null;
-          return recordToRow(a, id, info, pending);
-        } catch (e) { return null; }
-      })).filter(Boolean);
-
-      if (rows.length === 0) {
-        el.innerHTML = `<p class="msg">No readable stake records on this page.</p>`;
-        return;
-      }
-
-      const first = ids[ids.length - 1], last = ids[0];
-      const hasNext = first > 1;
-      const hasPrev = activityPage > 0;
-
-      renderTable(rows, el, {
-        columns: ACTIVITY_COLUMNS,
-        defaultSort: { key: "when", dir: "desc" },
-        rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
-        hint: `Stakes #${first}–#${last} of ${top} opened on this contract, newest first.
-          Read from stake records, so transaction links aren't available.`
-      });
-
-      el.insertAdjacentHTML("beforeend", `
-        <div class="pager">
-          <button id="actPrev" ${hasPrev ? "" : "disabled"}>← Newer</button>
-          <span class="pager-label">Page ${activityPage + 1} of ${Math.ceil(top / ACTIVITY_PAGE_SIZE)}</span>
-          <button id="actNext" ${hasNext ? "" : "disabled"}>Older →</button>
-        </div>`);
-
-      $('actPrev').addEventListener('click', () => loadActivity(activityPage - 1));
-      $('actNext').addEventListener('click', () => loadActivity(activityPage + 1));
+      const page = await collectPage(a, startId, activityFilter, ACTIVITY_PAGE_SIZE);
+      await attachTxHashes(a, page.rows);
+      activityRows = page.rows;
+      activityStack[activityPage + 1] = page.nextStart;
+      activityMeta = {
+        top, from: page.from, to: page.to, nextStart: page.nextStart, capped: page.capped,
+        readable: page.readable, otherKind: page.otherKind
+      };
+      paintActivity();
     } catch (e) {
       el.innerHTML = `<p class="msg error">Couldn't read stake records: ${esc(e.reason || e.message || e)}</p>`;
     } finally {
@@ -1495,17 +1725,19 @@
   async function onConnected() {
     $('connectPanel').classList.add('hidden');
     $('walletPanel').classList.remove('hidden');
+    $('portfolioPanel').classList.remove('hidden');
     $('stakePanel').classList.remove('hidden');
     $('walletAddr').textContent = short(account);
     $('walletAddr').title = account;
     paintStakeForm();
-    await Promise.all([refreshBalances(), refreshMyStakes(), refreshAllowance()]);
+    await Promise.all([refreshBalances(), refreshMyStakes(), refreshAllowance(), renderPortfolio()]);
   }
 
   function disconnect() {
     signer = null;
     account = null;
     $('walletPanel').classList.add('hidden');
+    $('portfolioPanel').classList.add('hidden');
     $('stakePanel').classList.add('hidden');
     $('connectPanel').classList.remove('hidden');
     $('connectMsg').className = "msg";
@@ -1532,6 +1764,60 @@
     $('walletBalance').innerHTML = a.price != null
       ? `${line} · ${usd(toFloat(bal, a) * a.price)}`
       : line;
+  }
+
+  const MIN_HOLDING_USD = 1;   // below this a position isn't worth a row
+
+  // Every asset, not just the selected tab — this is the cross-chain picture.
+  async function renderPortfolio() {
+    const el = $('portfolio');
+    if (!account) return;
+    el.innerHTML = `<p class="msg">Totalling every asset…</p>`;
+
+    const entries = await Promise.all(Object.values(assets).map(async (a) => {
+      try {
+        const stakes = await fetchStakes(a, account);
+        let tokens = ZERO();
+        for (const s of stakes) {
+          if (s.error || !s.info.status) continue;      // open positions only
+          tokens = tokens.add(s.info.amount);
+          if (s.pending) tokens = tokens.add(s.pending); // value includes rewards
+        }
+        return { a, tokens, value: a.price != null ? toFloat(tokens, a) * a.price : null };
+      } catch (e) {
+        return { a, tokens: null, value: null };
+      }
+    }));
+
+    const total = entries.reduce((n, e) => n + (e.value || 0), 0);
+    $('portfolioTotal').textContent = usd(total);
+
+    // Dust and empty positions are noise. An unpriced asset is kept when it
+    // holds tokens, since there's no way to know whether it clears the bar.
+    const shown = entries.filter(({ tokens, value }) =>
+      value == null ? (tokens && !tokens.isZero()) : value >= MIN_HOLDING_USD);
+
+    if (shown.length === 0) {
+      el.innerHTML = `<p class="msg">No staked positions worth more than
+        ${usd(MIN_HOLDING_USD)} yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = shown.map(({ a, tokens, value }) => {
+      const held = tokens && !tokens.isZero();
+      // No position, no logo — an empty row shouldn't carry a badge.
+      const mark = held && a.logo
+        ? `<img src="${a.logo}" alt="${esc(a.meta.symbol)}">`
+        : `<span class="no-logo"></span>`;
+      return `
+        <div class="holding${held ? "" : " empty"}">
+          ${mark}
+          <span class="sym">${esc(a.meta.symbol)}</span>
+          <span class="net">${esc(NETWORKS[a.chainId].short)}</span>
+          <span class="tokens">${tokens ? fmt(tokens, a, 4) : "—"}</span>
+          <span class="val">${value == null ? "—" : usd(value)}</span>
+        </div>`;
+    }).join("");
   }
 
   function refreshMyStakes() {
@@ -1706,7 +1992,7 @@
       $('stakeAmount').value = "";
       $('stakeDays').value = "";
       updateUnlockPreview();
-      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance()]);
+      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio()]);
     } catch (e) {
       if (e.code === 4001 || e.code === "ACTION_REJECTED") {
         setStatus("You rejected the transaction in your wallet. Nothing was sent.", "msg error");
@@ -1759,7 +2045,7 @@
       await tx.wait();
 
       setStatus(`${esc(a.meta.symbol)} stake #${esc(stakeId)} unstaked. <a href="${txLink(a.chainId, tx.hash)}" target="_blank" rel="noopener">View on explorer</a>`, "msg ok");
-      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance()]);
+      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio()]);
     } catch (e) {
       if (e.code === 4001 || e.code === "ACTION_REJECTED") {
         setStatus("You rejected the transaction in your wallet. Nothing was sent.", "msg error");
@@ -1785,6 +2071,16 @@
   $('stakeAmount').addEventListener('input', updateStakeButton);
   $('exactApproval').addEventListener('change', updateStakeButton);
   $('activityBtn').addEventListener('click', () => loadActivity(activityPage));
+  $('portfolioBtn').addEventListener('click', renderPortfolio);
+  $('actFilter').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-kind]');
+    if (!btn || btn.dataset.kind === activityFilter) return;
+    activityFilter = btn.dataset.kind;
+    $('actFilter').querySelectorAll('.seg-btn')
+      .forEach(b => b.classList.toggle('active', b === btn));
+    activityStack = [];
+    loadActivity(0);   // page boundaries differ per filter, so start over
+  });
   $('pctRow').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-pct]');
     if (!btn || btn.disabled) return;
@@ -1835,6 +2131,7 @@
     renderTabs();
     paintIntro();
     paintTitle();
+    paintContracts();
     paintAssetNote();
     paintStakeForm();
     loadPoolStats();
