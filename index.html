@@ -514,7 +514,7 @@
 
   const ASSETS = [
     {
-      key: "more", chainId: 1, kind: "erc20", label: "MORE", logo: LOGO_MORE,
+      key: "more", chainId: 1, kind: "erc20", label: "MORE", logo: LOGO_MORE, wordmark: true,
       token: "0xbEEf3bB9dA340EbdF0f5bae2E85368140d7D85D0",
       // Tokens sent here are unrecoverable, so they're taken out of supply.
       burnAddress: "0x000000000000000000000000000000000000dEaD",
@@ -523,7 +523,7 @@
       stakeAbi: STAKING_ABI
     },
     {
-      key: "more-rh", chainId: 4663, kind: "erc20", label: "MORE", logo: LOGO_MORE,
+      key: "more-rh", chainId: 4663, kind: "erc20", label: "MORE", logo: LOGO_MORE, wordmark: true,
       token: "0xc0F1A40512114b25cc1F30b5DF0bb48691405555",
       // Burning here reduces totalSupply rather than parking tokens at a dead
       // address, so the burn total is this launch figure minus current supply.
@@ -1525,8 +1525,10 @@
     const a = selected();
     const bal = balances[a.key];
     if (!bal) { $('walletBalance').textContent = "Balance unavailable"; return; }
-    const mark = a.logo ? `<img class="coin" src="${a.logo}" alt="">` : "";
-    const line = `${fmt(bal, a, 4)} ${esc(a.meta.symbol)}${mark}`;
+    // A wordmark already spells the ticker out, so don't print it twice.
+    const mark = a.logo ? `<img class="coin" src="${a.logo}" alt="${esc(a.meta.symbol)}">` : "";
+    const ticker = a.wordmark ? "" : ` ${esc(a.meta.symbol)}`;
+    const line = `${fmt(bal, a, 4)}${ticker}${mark}`;
     $('walletBalance').innerHTML = a.price != null
       ? `${line} · ${usd(toFloat(bal, a) * a.price)}`
       : line;
