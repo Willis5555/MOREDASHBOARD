@@ -153,17 +153,19 @@
     font-family: system-ui, sans-serif; font-size: 14px;
   }
   .holding:last-child { border-bottom: none; }
-  .holding img { height: 26px; width: auto; flex: 0 0 auto; }
-  .holding .sym { min-width: 74px; color: var(--text); }
+  /* amount, mark, chain — then value pushed to the right edge */
+  .holding .tokens {
+    color: var(--text); font-variant-numeric: tabular-nums;
+    min-width: 132px; text-align: right; flex: 0 0 auto;
+  }
+  .holding img { height: 24px; width: auto; max-width: 84px; flex: 0 0 auto; }
+  .holding .sym { color: var(--text); min-width: 62px; }
   .holding .net { color: var(--text-dim); font-size: 12px; flex: 1 1 auto; }
-  .holding .tokens { color: var(--text-dim); font-variant-numeric: tabular-nums; }
   .holding .val {
     color: var(--accent); font-variant-numeric: tabular-nums;
-    min-width: 90px; text-align: right;
+    min-width: 90px; text-align: right; flex: 0 0 auto;
   }
-  .holding.empty .sym, .holding.empty .val { color: var(--text-dim); }
-  /* keeps the row aligned when a logo is withheld */
-  .holding .no-logo { width: 26px; flex: 0 0 auto; }
+  .holding.empty .tokens, .holding.empty .val { color: var(--text-dim); }
 
   .contracts {
     margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line);
@@ -317,6 +319,7 @@
     <div class="price-row">
       <div class="price-big" id="price">—</div>
       <div class="delta" id="delta">—</div>
+      <div class="price-note" id="priceNote"></div>
     </div>
   </header>
 
@@ -361,6 +364,17 @@
       <button id="connectBtn">Connect wallet</button>
     </div>
 
+    <div class="panel hidden" id="portfolioPanel">
+      <div class="wallet-bar">
+        <div>
+          <span class="k">Total value staked</span>
+          <div class="portfolio-total" id="portfolioTotal">—</div>
+        </div>
+        <button id="portfolioBtn">Refresh</button>
+      </div>
+      <div id="portfolio"></div>
+    </div>
+
     <div class="panel hidden" id="walletPanel">
       <div class="wallet-bar">
         <div>
@@ -371,17 +385,6 @@
       </div>
       <div id="myStakes"></div>
       <div class="tx-status" id="unstakeStatus"></div>
-    </div>
-
-    <div class="panel hidden" id="portfolioPanel">
-      <div class="wallet-bar">
-        <div>
-          <span class="k">Total value staked</span>
-          <div class="portfolio-total" id="portfolioTotal">—</div>
-        </div>
-        <button id="portfolioBtn">Refresh</button>
-      </div>
-      <div id="portfolio"></div>
     </div>
 
     <div class="panel hidden" id="stakePanel">
@@ -704,9 +707,39 @@
     if (!n) return "—";
     return new Date(n * 1000).toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' });
   };
+  // Token prices span cents to billionths, so pick precision from magnitude
+  // rather than letting toLocaleString fall back to scientific notation.
+  function fmtPrice(n) {
+    if (n == null || !Number.isFinite(n)) return "—";
+    if (n >= 1) return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (n >= 0.01) return "$" + n.toFixed(4);
+    const decimals = Math.min(18, Math.max(2, 4 - Math.floor(Math.log10(Math.abs(n))) - 1));
+    return "$" + n.toFixed(decimals);
+  }
+
   const usd = (n) => "$" + n.toLocaleString(undefined, {
     maximumFractionDigits: n !== 0 && Math.abs(n) < 100 ? 2 : 0
   });
+  // Pools in tiers. A deep pool is trusted on its own; below that the price is
+  // still the last trade that happened, which beats showing nothing for a token
+  // that simply isn't traded often. The tier is reported so the UI can say so.
+  const POOL_DEEP_USD = 25000;
+  const POOL_THIN_USD = 1000;
+
+  function pickPools(list) {
+    const byDepth = list.slice()
+      .sort((x, y) => (y.liquidity?.usd || 0) - (x.liquidity?.usd || 0));
+    const deep = byDepth.filter(p => (p.liquidity?.usd || 0) >= POOL_DEEP_USD);
+    if (deep.length) return { pools: deep.slice(0, 5), tier: "deep" };
+
+    const shallow = byDepth.filter(p => (p.liquidity?.usd || 0) >= POOL_THIN_USD);
+    if (shallow.length) return { pools: shallow.slice(0, 5), tier: "shallow" };
+
+    // Nothing but dust. Take the deepest of what's there, one pool only —
+    // a median across dust pools is no more meaningful than one of them.
+    return byDepth.length ? { pools: [byDepth[0]], tier: "thin" } : { pools: [], tier: null };
+  }
+
   const median = (xs) => {
     const v = xs.slice().sort((a, b) => a - b);
     const mid = Math.floor(v.length / 2);
@@ -764,6 +797,7 @@
   // --- Prices: one DexScreener call per asset ---
   async function loadPrices() {
     if (document.hidden) return;
+
     await Promise.all(Object.values(assets).map(async (a) => {
       if (!a.priceRef) return;
       try {
@@ -771,58 +805,96 @@
         const data = await res.json();
         const chain = NETWORKS[a.chainId].dexChain;
         const want = a.priceRef.toLowerCase();
+        const pairs = (data.pairs || []).filter(p => !chain || p.chainId === chain);
 
-        // priceUsd describes the pair's BASE token, so pools where our asset is
-        // the quote side report someone else's price and are excluded.
-        const candidates = (data.pairs || [])
-          .filter(p => (!chain || p.chainId === chain)
-                    && p.baseToken?.address?.toLowerCase() === want
-                    && Number(p.priceUsd) > 0)
-          .sort((x, y) => (y.liquidity?.usd || 0) - (x.liquidity?.usd || 0));
+        // Preferred: pools where our token is the BASE side, so priceUsd is
+        // literally its price.
+        let picked = pickPools(pairs.filter(p =>
+          p.baseToken?.address?.toLowerCase() === want && Number(p.priceUsd) > 0));
+        let pool = picked.pools;
+        let tier = picked.tier;
+        let source = "pool";
+        let prices = pool.map(p => Number(p.priceUsd));
 
-        // Ignore dust pools, which quote nonsense prices on almost no volume.
-        const deep = candidates.filter(p => (p.liquidity?.usd || 0) >= 25000);
-        const pool = (deep.length ? deep : candidates).slice(0, 5);
+        // Otherwise: pools where it's the QUOTE side. priceUsd belongs to the
+        // other token, but priceNative says how many of ours one of those buys,
+        // so dividing gives ours. This is the case for a token that's only ever
+        // paired against, never quoted.
+        if (!pool.length) {
+          const quoted = pairs.filter(p =>
+            p.quoteToken?.address?.toLowerCase() === want
+            && Number(p.priceUsd) > 0 && Number(p.priceNative) > 0);
+          picked = pickPools(quoted);
+          pool = picked.pools;
+          tier = picked.tier;
+          prices = pool.map(p => Number(p.priceUsd) / Number(p.priceNative));
+          source = "quote";
+        }
 
-        if (!pool.length) { a.pair = null; a.price = null; a.change = null; a.poolCount = 0; return; }
+        if (!pool.length) {
+          a.pair = null; a.price = null; a.change = null; a.poolCount = 0;
+          a.priceSource = null; a.priceTier = null;
+          return;
+        }
 
-        // Median across the deepest pools — one mispriced pool can't move it.
-        a.price = median(pool.map(p => Number(p.priceUsd)));
+        a.price = median(prices);
+        a.priceSource = source;
+        a.priceTier = tier;
 
-        // Same treatment for the 24h change, and only from pools that actually
-        // traded — a pool with no volume reports a meaningless percentage, and a
-        // recently seeded one reports an astronomical one.
+        // Change only from pools that actually traded — an untraded or freshly
+        // seeded pool reports a meaningless or astronomical percentage. A
+        // quote-side price has no usable change figure of its own.
         const traded = pool.filter(p => (p.volume?.h24 || 0) > 0);
-        const changes = (traded.length ? traded : pool)
-          .map(p => Number(p.priceChange?.h24))
-          .filter(Number.isFinite);
+        const changes = source === "pool"
+          ? (traded.length ? traded : pool).map(p => Number(p.priceChange?.h24)).filter(Number.isFinite)
+          : [];
         const change = changes.length ? median(changes) : null;
-
-        // A figure this large is a broken baseline, not a real move. Better to
-        // show nothing than a number that's confidently wrong.
         a.change = (change != null && Math.abs(change) <= 5000) ? change : null;
 
-        a.pair = pool[0];          // deepest pool, kept for console inspection
+        a.pair = pool[0];
         a.poolCount = pool.length;
       } catch (e) {
         a.pair = null;
         a.change = null;
+        a.priceSource = null;
       }
     }));
+
+
     paintPrice();
     paintPoolValue();
     if (account) paintBalance();
   }
 
+  // Only speaks up when the figure isn't a direct read of this chain's pools.
+  function paintPriceNote() {
+    const a = selected();
+    const src = a.priceSource;
+    const el = $('priceNote');
+    if (!src) { el.textContent = ""; return; }
+
+    // A thin pool's figure is the last trade, not a liquid market price.
+    if (a.priceTier === "thin" || a.priceTier === "shallow") {
+      el.textContent = `Last trade in a low-liquidity pool on ${NETWORKS[a.chainId].short}`
+        + (src === "quote" ? ", derived from the quote side." : ".");
+      return;
+    }
+    if (src === "pool") { el.textContent = ""; return; }
+    el.textContent = src === "quote"
+      ? `Derived from pools where ${a.meta.symbol} is the quote asset — no pool prices it directly.`
+      : "";
+  }
+
   function paintPrice() {
     const a = selected();
+    paintPriceNote();
     if (!a.pair) {
-      $('price').textContent = a.price == null ? "—" : "$" + a.price;
+      $('price').textContent = fmtPrice(a.price);
       $('delta').textContent = "";
       $('delta').className = "delta";
       return;
     }
-    $('price').textContent = "$" + a.price.toLocaleString(undefined, { maximumSignificantDigits: 4 });
+    $('price').textContent = fmtPrice(a.price);
 
     if (a.change != null) {
       $('delta').textContent = (a.change >= 0 ? "+" : "") + a.change.toFixed(2) + "% (24h)";
@@ -1805,16 +1877,16 @@
 
     el.innerHTML = shown.map(({ a, tokens, value }) => {
       const held = tokens && !tokens.isZero();
-      // No position, no logo — an empty row shouldn't carry a badge.
-      const mark = held && a.logo
-        ? `<img src="${a.logo}" alt="${esc(a.meta.symbol)}">`
-        : `<span class="no-logo"></span>`;
+      // The logo stands in for the ticker. Assets without one keep the text so
+      // the row is never unlabelled.
+      const mark = a.logo
+        ? `<img src="${a.logo}" alt="${esc(a.meta.symbol)}" title="${esc(a.meta.symbol)}">`
+        : `<span class="sym">${esc(a.meta.symbol)}</span>`;
       return `
         <div class="holding${held ? "" : " empty"}">
-          ${mark}
-          <span class="sym">${esc(a.meta.symbol)}</span>
-          <span class="net">${esc(NETWORKS[a.chainId].short)}</span>
           <span class="tokens">${tokens ? fmt(tokens, a, 4) : "—"}</span>
+          ${mark}
+          <span class="net">${esc(NETWORKS[a.chainId].short)}</span>
           <span class="val">${value == null ? "—" : usd(value)}</span>
         </div>`;
     }).join("");
