@@ -178,6 +178,83 @@
   .contract-row .k { color: var(--text-dim); min-width: 62px; }
   .contract-row a { font-family: 'Courier New', monospace; word-break: break-all; }
 
+  .cal-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .cal-nav { display: flex; align-items: center; gap: 10px; }
+  .cal-nav button { margin-top: 0; padding: 4px 12px; font-size: 14px; line-height: 1.2; }
+  .cal-month {
+    font-family: 'Press Start 2P', monospace; font-size: 11px;
+    color: var(--heading); min-width: 190px; text-align: center;
+  }
+  .cal-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .cal-actions button { margin-top: 0; padding: 4px 12px; font-size: 13px; }
+  .cal-actions .check { margin-top: 0; }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-head {
+    text-align: center; font-size: 11px; color: var(--text-dim);
+    padding: 4px 0; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .cal-cell {
+    position: relative; min-height: 62px; padding: 5px 6px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(255,255,255,0.012);
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-cell.blank { border-color: transparent; background: none; }
+  .cal-cell .dnum { font-size: 12px; color: var(--text-dim); }
+  .cal-cell.today { border-color: var(--accent); }
+  .cal-cell.today .dnum { color: var(--accent); font-weight: bold; }
+  .cal-cell.has { cursor: pointer; background: rgba(150,201,156,0.07); }
+  .cal-cell.has:hover { background: rgba(150,201,156,0.14); }
+  .cal-cell.sel { outline: 1px solid var(--accent); }
+  .cal-pill {
+    display: inline-block; margin-top: 5px; padding: 1px 6px;
+    border-radius: 999px; font-size: 11px; line-height: 1.5;
+    background: rgba(150,201,156,0.18); color: var(--accent);
+  }
+  .cal-pill.green { background: rgba(150,201,156,0.22); color: var(--accent); }
+  .cal-pill.amber { background: rgba(224,179,88,0.18); color: var(--amber); }
+  .cal-tick { display: block; font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+
+  .cal-detail { margin-top: 14px; }
+  .cal-detail .cal-day-head {
+    font-size: 12px; color: var(--heading); margin-bottom: 8px;
+  }
+  .cal-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 7px 0; border-top: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; font-size: 13px;
+  }
+  .cal-row .amt { color: var(--text); min-width: 170px; text-align: right; }
+  .cal-row .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .cal-total {
+    border-top: 1px solid var(--accent-dim, var(--line));
+    margin-top: 2px; padding-top: 10px; font-weight: bold;
+  }
+  .cal-total .amt { color: var(--text); }
+  .cal-total .tot-sep { color: var(--text-dim); margin: 0 8px; font-weight: normal; }
+  .cal-row .net { color: var(--text-dim); font-size: 12px; }
+  .cal-legend {
+    display: flex; gap: 18px; flex-wrap: wrap;
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--text-dim);
+  }
+  .cal-legend .sw {
+    display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+    margin-right: 6px; vertical-align: -1px;
+  }
+  .sw-green { background: var(--accent); }
+  .sw-amber { background: var(--amber); }
+  .sw-accent { background: rgba(150,201,156,0.35); }
+  @media (max-width: 720px) {
+    .cal-cell { min-height: 48px; padding: 3px 4px; }
+    .cal-tick { display: none; }
+    .cal-month { min-width: 130px; font-size: 9px; }
+  }
+
   .wallet-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .wallet-actions .check { margin-top: 0; }
 
@@ -391,6 +468,29 @@
         <button id="portfolioBtn">Refresh</button>
       </div>
       <div id="portfolio"></div>
+    </div>
+
+    <div class="panel hidden" id="calendarPanel">
+      <div class="cal-bar">
+        <div class="cal-nav">
+          <button id="calPrev" aria-label="Previous month">&#8592;</button>
+          <span class="cal-month" id="calMonth">—</span>
+          <button id="calNext" aria-label="Next month">&#8594;</button>
+        </div>
+        <div class="cal-actions">
+          <button id="calToday">Today</button>
+          <label class="check">
+            <input type="checkbox" id="calAllBox"> Show stakes from all assets
+          </label>
+        </div>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-detail" id="calDetail"></div>
+      <div class="cal-legend">
+        <span><i class="sw sw-green"></i>Unlocked — ready to end</span>
+        <span><i class="sw sw-amber"></i>Past the 14-day grace period</span>
+        <span><i class="sw sw-accent"></i>Still locked</span>
+      </div>
     </div>
 
     <div class="panel hidden" id="walletPanel">
@@ -638,6 +738,11 @@
       burnAddress: "0x000000000000000000000000000000000000dEaD",
       staking: "0xfc7863c0caf560aC5e7FABa4537A9184911FD2b2",
       priceRef: "0xbEEf3bB9dA340EbdF0f5bae2E85368140d7D85D0",
+      // Uniswap v4 keeps every pool inside one PoolManager, so a pool is
+      // identified by its 32-byte poolId rather than by a contract address.
+      // DexScreener keys v4 pairs by that poolId. The PoolManager address
+      // itself is shared by every v4 pool and identifies nothing.
+      pricePair: "0x745f836a293544db638a897e14b455f64c4147129a27b1959d910c49a326f94a",
       stakeAbi: STAKING_ABI
     },
     {
@@ -895,10 +1000,15 @@
         const url = a.pricePair
           ? `https://api.dexscreener.com/latest/dex/pairs/${chain}/${a.pricePair}`
           : `https://api.dexscreener.com/latest/dex/tokens/${a.priceRef}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        // The pairs endpoint answers with `pair`; the tokens one with `pairs`.
-        const returned = data.pairs || (data.pair ? [data.pair] : []);
+        const tokenUrl = `https://api.dexscreener.com/latest/dex/tokens/${a.priceRef}`;
+        let returned = [];
+        for (const attempt of (a.pricePair ? [url, tokenUrl] : [url])) {
+          const res = await fetch(attempt);
+          const data = await res.json();
+          // The pairs endpoint answers with `pair`; the tokens one with `pairs`.
+          returned = data.pairs || (data.pair ? [data.pair] : []);
+          if (returned.length) break;      // named pair resolved; stop here
+        }
         const want = a.priceRef.toLowerCase();
         const pairs = returned.filter(p => !chain || p.chainId === chain);
 
@@ -1470,6 +1580,195 @@
     ];
   }
 
+  // ---- Unlock calendar -------------------------------------------------
+  // Shows when open stakes come due. Dates come from info.endTime, the same
+  // field the Unlocks column uses, so the two can never disagree.
+  let calAllAssets = false;          // off by default, like the table toggle
+  let calCursor = null;              // first day of the month on screen
+  let calSelected = null;            // yyyy-mm-dd of the day being detailed
+  let calStakes = [];                // open stakes backing the current view
+  let calByDay = new Map();          // unlock day -> stakes, rebuilt each paint
+
+  const dayKey = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  function calUnlockState(s) {
+    // Delegates to the table's own logic so the calendar and the Unlocks
+    // column can never disagree about what counts as late.
+    const st = unstakeState(s);
+    return st === "early" ? "locked" : (st || "locked");
+  }
+
+  async function renderCalendar() {
+    const panel = $('calendarPanel');
+    if (!account) { panel.classList.add("hidden"); return; }
+    panel.classList.remove("hidden");
+
+    const grid = $('calGrid');
+    grid.innerHTML = `<div class="muted" style="grid-column:1/-1">Reading stakes…</div>`;
+
+    let stakes = [];
+    try {
+      stakes = calAllAssets
+        ? await fetchAllStakes(account)
+        : await fetchStakes(selected(), account);
+    } catch (err) {
+      grid.innerHTML = `<div class="err" style="grid-column:1/-1">Couldn't read your stakes: ${esc(err.message || err)}</div>`;
+      return;
+    }
+
+    // Only open stakes have an unlock still ahead of them.
+    calStakes = stakes.filter(s => !s.error && !isClosed(s.info));
+    paintCalendar();
+  }
+
+  function paintCalendar() {
+    const grid = $('calGrid');
+    if (!calCursor) calCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+    const year = calCursor.getFullYear(), month = calCursor.getMonth();
+    $('calMonth').textContent = calCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+    // Bucket the stakes by the day they unlock.
+    const byDay = new Map();
+    for (const s of calStakes) {
+      const d = new Date(s.info.endTime.toNumber() * 1000);
+      const k = dayKey(d);
+      if (!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(s);
+    }
+
+    const first = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const lead = first.getDay();                 // 0 = Sunday
+    const todayKey = dayKey(new Date());
+
+    let html = "";
+    for (const w of ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]) {
+      html += `<div class="cal-head">${w}</div>`;
+    }
+    for (let i = 0; i < lead; i++) html += `<div class="cal-cell blank"></div>`;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      const k = dayKey(d);
+      const list = byDay.get(k) || [];
+      const cls = ["cal-cell"];
+      if (k === todayKey) cls.push("today");
+      if (list.length) cls.push("has");
+      if (k === calSelected) cls.push("sel");
+
+      let pill = "";
+      if (list.length) {
+        // A day's tone follows the most urgent stake on it.
+        const states = list.map(calUnlockState);
+        const tone = states.includes("late") ? "amber"
+                   : states.includes("ready") ? "green" : "";
+        const tickers = [...new Set(list.map(s => s.asset.meta.symbol))];
+        pill = `<span class="cal-pill ${tone}">${list.length} unlock${list.length > 1 ? "s" : ""}</span>`
+             + `<span class="cal-tick">${esc(tickers.slice(0, 2).join(", "))}${tickers.length > 2 ? "…" : ""}</span>`;
+      }
+      html += `<div class="${cls.join(" ")}" data-day="${k}" tabindex="0" role="button"
+                    aria-label="${d.toLocaleDateString(undefined, { month: "long", day: "numeric" })}, ${list.length} unlock${list.length === 1 ? "" : "s"}">
+                 <span class="dnum">${day}</span>${pill}
+               </div>`;
+    }
+    grid.innerHTML = html;
+    calByDay = byDay;
+
+    // Every day is selectable, including empty ones. If only days with
+    // unlocks responded, clicking an empty day would leave the previous
+    // day's list sitting there looking current.
+    grid.querySelectorAll('.cal-cell[data-day]').forEach(cell => {
+      const pick = () => selectDay(cell.dataset.day);
+      cell.addEventListener('click', pick);
+      cell.addEventListener('keydown', e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
+      });
+    });
+
+    paintCalDetail();
+  }
+
+  // Selection only moves an outline and swaps the list below, so it doesn't
+  // rebuild the grid on every click.
+  function selectDay(key) {
+    calSelected = key;
+    $('calGrid').querySelectorAll('.cal-cell[data-day]').forEach(cell => {
+      cell.classList.toggle('sel', cell.dataset.day === key);
+    });
+    paintCalDetail();
+  }
+
+  function paintCalDetail() {
+    const box = $('calDetail');
+    const byDay = calByDay;
+    if (calSelected && !byDay.has(calSelected)) {
+      // A day was picked but nothing unlocks on it — say so, rather than
+      // leaving the previously picked day's stakes on screen.
+      const d = new Date(calSelected + "T00:00:00");
+      box.innerHTML = `<div class="cal-day-head">${d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>`
+                    + `<div class="muted">Nothing unlocks on this day.</div>`;
+      return;
+    }
+    if (!calSelected) {
+      const total = calStakes.length;
+      box.innerHTML = total
+        ? `<div class="muted">${total} open stake${total > 1 ? "s" : ""}. Pick a highlighted day to see what unlocks on it.</div>`
+        : `<div class="muted">No open stakes${calAllAssets ? "" : ` for ${esc(selected().meta.symbol)}`}.</div>`;
+      return;
+    }
+    const list = byDay.get(calSelected);
+    const d = new Date(calSelected + "T00:00:00");
+
+    let html = `<div class="cal-day-head">${d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>`;
+
+    for (const s of list) {
+      const a = s.asset;
+      const state = calUnlockState(s);
+      const tone = state === "late" ? "amber" : state === "ready" ? "green" : "";
+      const label = state === "late" ? "past grace" : state === "ready" ? "ready" : "locked";
+      const net = NETWORKS[a.chainId];
+      const tokens = toFloat(s.info.amount, a);
+      const value = a.price == null ? null : tokens * a.price;
+      // fmt() converts from the raw BigNumber itself, so it gets info.amount,
+      // not the already-converted float — passing the float divides twice.
+      const amount = unitLabel(fmt(s.info.amount, a, 4), a);
+      html += `<div class="cal-row">
+                 <span class="cal-pill ${tone}">${label}</span>
+                 <span class="amt">${amount}</span>
+                 ${value == null ? "" : `<span class="val">(${usd(value)})</span>`}
+                 <span class="net">${esc(net.short)}</span>
+                 <span class="net">stake #${s.id}</span>
+               </div>`;
+    }
+
+    // Totals. Token amounts only add up within one asset, so they're summed
+    // per asset; the dollar figure is the one number that spans all of them.
+    const perAsset = new Map();        // asset key -> { a, raw }
+    let dayUsd = 0, unpriced = 0;
+    for (const s of list) {
+      const a = s.asset;
+      const cur = perAsset.get(a.key);
+      perAsset.set(a.key, { a, raw: cur ? cur.raw.add(s.info.amount) : s.info.amount });
+      if (a.price == null) { unpriced++; continue; }
+      dayUsd += toFloat(s.info.amount, a) * a.price;
+    }
+
+    const amounts = [...perAsset.values()]
+      .map(({ a, raw }) => unitLabel(fmt(raw, a, 4), a))
+      .join('<span class="tot-sep">+</span>');
+
+    html += `<div class="cal-row cal-total">
+               <span class="cal-pill">${list.length} stake${list.length === 1 ? "" : "s"}</span>
+               <span class="amt">${amounts}</span>
+               <span class="val">(${usd(dayUsd)})</span>
+               ${unpriced ? `<span class="net">${unpriced} unpriced, not counted</span>` : ""}
+             </div>`;
+
+    box.innerHTML = html;
+  }
+
   const sortState = new WeakMap();
   let showClosed = false;      // shared by both stake tables
   let allAssetStakes = false;  // wallet list spans every asset when on
@@ -1948,7 +2247,7 @@
     $('walletAddr').textContent = short(account);
     $('walletAddr').title = account;
     paintStakeForm();
-    await Promise.all([refreshBalances(), refreshMyStakes(), refreshAllowance(), renderPortfolio()]);
+    await Promise.all([refreshBalances(), refreshMyStakes(), refreshAllowance(), renderPortfolio(), renderCalendar()]);
   }
 
   function disconnect() {
@@ -1956,6 +2255,7 @@
     account = null;
     $('walletPanel').classList.add('hidden');
     $('portfolioPanel').classList.add('hidden');
+    $('calendarPanel').classList.add('hidden');
     $('stakePanel').classList.add('hidden');
     $('connectPanel').classList.remove('hidden');
     $('connectMsg').className = "msg";
@@ -2214,7 +2514,7 @@
       $('stakeAmount').value = "";
       $('stakeDays').value = "";
       updateUnlockPreview();
-      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio()]);
+      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio(), renderCalendar()]);
     } catch (e) {
       if (e.code === 4001 || e.code === "ACTION_REJECTED") {
         setStatus("You rejected the transaction in your wallet. Nothing was sent.", "msg error");
@@ -2267,7 +2567,7 @@
       await tx.wait();
 
       setStatus(`${esc(a.meta.symbol)} stake #${esc(stakeId)} unstaked. <a href="${txLink(a.chainId, tx.hash)}" target="_blank" rel="noopener">View on explorer</a>`, "msg ok");
-      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio()]);
+      await Promise.all([refreshBalances(), refreshMyStakes(), loadPoolStats(), refreshAllowance(), renderPortfolio(), renderCalendar()]);
     } catch (e) {
       if (e.code === 4001 || e.code === "ACTION_REJECTED") {
         setStatus("You rejected the transaction in your wallet. Nothing was sent.", "msg error");
@@ -2288,6 +2588,28 @@
   $('wallet').addEventListener('keydown', (e) => { if (e.key === "Enter") lookupStake(); });
   $('connectBtn').addEventListener('click', connect);
   $('disconnectBtn').addEventListener('click', disconnect);
+  $('calAllBox').addEventListener('change', (e) => {
+    calAllAssets = e.target.checked;
+    calSelected = null;
+    if (account) renderCalendar();
+  });
+  $('calPrev').addEventListener('click', () => {
+    calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() - 1, 1);
+    calSelected = null;
+    paintCalendar();
+  });
+  $('calNext').addEventListener('click', () => {
+    calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + 1, 1);
+    calSelected = null;
+    paintCalendar();
+  });
+  $('calToday').addEventListener('click', () => {
+    const n = new Date();
+    calCursor = new Date(n.getFullYear(), n.getMonth(), 1);
+    calSelected = null;
+    paintCalendar();
+  });
+
   $('allAssetsBox').addEventListener('change', (e) => {
     allAssetStakes = e.target.checked;
     if (account) refreshMyStakes();
