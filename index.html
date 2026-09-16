@@ -178,30 +178,6 @@
   .contract-row .k { color: var(--text-dim); min-width: 62px; }
   .contract-row a { font-family: 'Courier New', monospace; word-break: break-all; }
 
-  /* Per-section progress. Absolutely positioned so showing one never
-     reflows the panel underneath it. */
-  .panel, .price-row { position: relative; }
-  .loadbar {
-    position: absolute; left: 0; right: 0; top: 0; height: 2px;
-    overflow: hidden; border-radius: 2px 2px 0 0;
-    background: rgba(150,201,156,0.10); pointer-events: none;
-  }
-  .loadbar > i {
-    display: block; height: 100%; width: 34%;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: loadslide 1.05s ease-in-out infinite;
-  }
-  @keyframes loadslide {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(394%); }
-  }
-  .loadbar.inline { position: static; height: 2px; margin: 10px 0 0; border-radius: 2px; }
-  /* Respect a reduced-motion preference: hold a static bar instead. */
-  @media (prefers-reduced-motion: reduce) {
-    .loadbar > i { animation: none; width: 100%; opacity: 0.55; }
-  }
-  .is-stale { opacity: 0.55; transition: opacity 120ms linear; }
-
   .act-controls {
     display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
   }
@@ -1638,53 +1614,6 @@
     ];
   }
 
-  // ---- Per-section loading state ---------------------------------------
-  // Each panel shows its own bar, so a slow chain is visibly isolated rather
-  // than making the whole page look stuck. Counted, because a section can
-  // have two loads in flight (a refresh landing on top of a tab switch).
-  const busyCounts = new Map();
-
-  function setBusy(el, on, opts = {}) {
-    if (!el) return;
-    const n = (busyCounts.get(el) || 0) + (on ? 1 : -1);
-    busyCounts.set(el, Math.max(0, n));
-    const active = busyCounts.get(el) > 0;
-
-    let bar = [...el.children].find(c => c.classList && c.classList.contains("loadbar"));
-    if (active && !bar) {
-      bar = document.createElement("div");
-      bar.className = "loadbar" + (opts.inline ? " inline" : "");
-      bar.innerHTML = "<i></i>";
-      bar.setAttribute("role", "progressbar");
-      bar.setAttribute("aria-label", opts.label || "Loading");
-      el.prepend(bar);
-    } else if (!active && bar) {
-      bar.remove();
-    }
-    // Dim content that's being replaced, so stale figures don't read as current.
-    if (opts.dim) opts.dim.classList.toggle("is-stale", active);
-  }
-
-  // Wraps a load so the bar always clears — including when the read throws,
-  // which is exactly when a stranded bar would be most misleading.
-  async function withBusy(el, fn, opts) {
-    setBusy(el, true, opts);
-    try { return await fn(); }
-    finally { setBusy(el, false, opts); }
-  }
-
-  // Wraps a loader so its section shows a bar for as long as it runs. Applied
-  // to the function itself rather than sprinkled through each body, so no
-  // early return or thrown error can leave a bar running forever.
-  function withBars(fn, elFn, label) {
-    return async function (...args) {
-      const el = elFn();
-      setBusy(el, true, { label });
-      try { return await fn.apply(this, args); }
-      finally { setBusy(el, false, { label }); }
-    };
-  }
-
   // ---- Unlock calendar -------------------------------------------------
   // Shows when open stakes come due. Dates come from info.endTime, the same
   // field the Unlocks column uses, so the two can never disagree.
@@ -2006,13 +1935,10 @@
 
     btn.disabled = true;
     btn.textContent = "Reading…";
-    const panel = $('stakeResult').parentElement;
-    setBusy(panel, true, { label: "Looking up stakes" });
     try {
       await renderStakesFor(wallet, $('stakeResult'),
         `No ${selected().meta.symbol} stakes found for this address.`);
     } finally {
-      setBusy(panel, false, { label: "Looking up stakes" });
       btn.disabled = false;
       btn.textContent = "Look up stakes";
     }
@@ -2927,16 +2853,6 @@
       await Promise.all([refreshBalances(), refreshAllowance(), refreshMyStakes()]);
     });
   }
-
-  // Each loader reports into its own panel, so one slow chain shows up as one
-  // section still working rather than the whole page looking stuck.
-  loadPrices      = withBars(loadPrices,      () => document.querySelector('.price-row'), "Loading prices");
-  loadPoolStats   = withBars(loadPoolStats,   () => $('poolGrid').parentElement,          "Loading pool stats");
-  loadActivity    = withBars(loadActivity,    () => $('activity').parentElement,          "Loading stake records");
-  renderPortfolio = withBars(renderPortfolio, () => $('portfolioPanel'),                  "Loading portfolio");
-  renderCalendar  = withBars(renderCalendar,  () => $('calendarPanel'),                   "Loading calendar");
-  refreshMyStakes = withBars(refreshMyStakes, () => $('walletPanel'),                     "Loading your stakes");
-  refreshBalances = withBars(refreshBalances, () => $('walletPanel'),                     "Loading balance");
 
   (async function init() {
     await initAssets();          // decimals and symbols first; everything formats against them
