@@ -192,14 +192,21 @@
     background: repeating-linear-gradient(90deg,
       var(--accent) 0 8px, transparent 8px 11px);
     background-repeat: no-repeat;
-    /* 110px of track / 11px per block = exactly 10 blocks, so the fill
-       advances one whole block per step and ends flush with the track. */
+    /* 110px of track / 11px per block = exactly 10 blocks. jump-start, not
+       end: steps(n, end) emits 0%..90% and never draws the final block. */
     background-size: 100% 100%;
-    animation: retrofill 1.5s steps(10, end) infinite;
+    animation: retrofill 1.5s steps(10, jump-start) infinite;
   }
   @keyframes retrofill {
     0%   { background-size: 0% 100%; }
     100% { background-size: 100% 100%; }
+  }
+  /* Real progress: width set from the count, no animation. */
+  .retrobar.determinate > i { animation: none; }
+  .pct {
+    margin-left: 7px; font-variant-numeric: tabular-nums;
+    color: var(--text-dim); font-size: 12px; min-width: 34px;
+    display: inline-block;
   }
   .busyline {
     display: inline-flex; align-items: center;
@@ -612,6 +619,9 @@
       <label for="wallet">Wallet address</label>
       <input type="text" id="wallet" placeholder="0x…" autocomplete="off" spellcheck="false">
       <button id="lookupBtn">Look up stakes</button>
+      <label class="check">
+        <input type="checkbox" id="lookupAllBox" checked> Show stakes from all assets
+      </label>
       <div id="stakeResult"></div>
     </div>
   </section>
@@ -1427,10 +1437,9 @@
 
   // ================= Stakes =================
   // Every asset on every configured chain, flattened into one list.
-  async function fetchAllStakes(address) {
-    const lists = await Promise.all(
-      Object.values(assets).map(a => fetchStakes(a, address).catch(() => []))
-    );
+  async function fetchAllStakes(address, progressKey) {
+    const jobs = Object.values(assets).map(a => fetchStakes(a, address).catch(() => []));
+    const lists = progressKey ? await trackAll(progressKey, jobs) : await Promise.all(jobs);
     return lists.flat();
   }
 
@@ -1557,8 +1566,8 @@
       } },
     { key: "chain",   label: "Chain",   sort: s => NETWORKS[s.asset.chainId].short,
       cell: s => chainCell(s.asset.chainId) },
-    { key: "ticker",  label: "Ticker",  sort: s => s.asset.meta.symbol,
-      cell: s => `<span class="ticker">${esc(s.asset.meta.symbol)}</span>` },
+    { key: "ticker",  label: "Coin",    sort: s => s.asset.meta.symbol,
+      cell: s => coinCell(s.asset) },
     { key: "id",      label: "Stake",   sort: s => Number(s.id.toString()),
       cell: s => "#" + esc(s.id.toString()) },
     { key: "amount",  label: "Tokens",  num: true, sort: s => toFloat(s.info.amount, s.asset),
@@ -1656,9 +1665,37 @@
   // have two loads in flight (a refresh landing on top of a tab switch).
   const busyCounts = new Map();
 
-  // The bar itself, for dropping beside a loading message.
-  const spinner = (label) =>
-    `<span class="retrobar" role="progressbar" aria-label="${esc(label || "Loading")}"><i></i></span>`;
+  // The bar itself, for dropping beside a loading message. Pass a key and the
+  // bar becomes determinate: setProgress(key, done, total) drives it.
+  const spinner = (label, key) =>
+    `<span class="retrobar" ${key ? `data-k="${esc(key)}"` : ""} role="progressbar"
+       aria-label="${esc(label || "Loading")}"><i></i></span>` +
+    (key ? `<span class="pct" data-k="${esc(key)}"></span>` : "");
+
+  // Fills the bar to done/total and prints the percentage. Called as each
+  // unit of work settles, so the figure reflects finished reads, not started.
+  function setProgress(key, done, total) {
+    if (!total) return;
+    const pct = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+    document.querySelectorAll(`.retrobar[data-k="${key}"]`).forEach(bar => {
+      bar.classList.add("determinate");
+      bar.setAttribute("aria-valuenow", String(pct));
+      const fill = bar.querySelector("i");
+      if (fill) fill.style.backgroundSize = pct + "% 100%";
+    });
+    document.querySelectorAll(`.pct[data-k="${key}"]`).forEach(el => {
+      el.textContent = pct + "%";
+    });
+  }
+
+  // Runs a list of jobs, advancing the named bar as each one finishes.
+  function trackAll(key, jobs) {
+    let done = 0;
+    const total = jobs.length;
+    setProgress(key, 0, total);
+    return Promise.all(jobs.map(j =>
+      Promise.resolve(j).finally(() => setProgress(key, ++done, total))));
+  }
 
   function setBusy(el, on, opts = {}) {
     if (!el) return;
@@ -1724,12 +1761,13 @@
     panel.classList.remove("hidden");
 
     const grid = $('calGrid');
-    grid.innerHTML = `<div class="muted" style="grid-column:1/-1">Reading stakes… ${spinner("Loading calendar")}</div>`;
+    grid.innerHTML = `<div class="muted" style="grid-column:1/-1">Reading stakes… ${
+      spinner("Loading calendar", calAllAssets ? "calendar" : null)}</div>`;
 
     let stakes = [];
     try {
       stakes = calAllAssets
-        ? await fetchAllStakes(account)
+        ? await fetchAllStakes(account, "calendar")
         : await fetchStakes(selected(), account);
     } catch (err) {
       grid.innerHTML = `<div class="err" style="grid-column:1/-1">Couldn't read your stakes: ${esc(err.message || err)}</div>`;
@@ -1904,6 +1942,9 @@
   const sortState = new WeakMap();
   let showClosed = false;      // shared by both stake tables
   let allAssetStakes = false;  // wallet list spans every asset when on
+  // The lookup defaults the other way: checking someone else's address, you
+  // rarely know which asset they used, so it starts across all of them.
+  let lookupAllAssets = true;
 
   function renderTable(stakes, container, opts = {}) {
     const all = opts.columns || STAKE_COLUMNS;
@@ -1995,10 +2036,11 @@
   }
 
   async function renderStakesFor(address, container, emptyText, opts = {}) {
-    container.innerHTML = `<p class="msg">Reading from chain… ${spinner("Loading stakes")}</p>`;
+    container.innerHTML = `<p class="msg">Reading from chain… ${
+      spinner("Loading stakes", opts.allAssets ? "stakes" : null)}</p>`;
     try {
       const stakes = opts.allAssets
-        ? await fetchAllStakes(address)
+        ? await fetchAllStakes(address, "stakes")
         : await fetchStakes(selected(), address);
       if (stakes.length === 0) {
         container.innerHTML = `<p class="msg">${esc(emptyText)}</p>`;
@@ -2035,7 +2077,10 @@
     btn.textContent = "Reading…";
     try {
       await renderStakesFor(wallet, $('stakeResult'),
-        `No ${selected().meta.symbol} stakes found for this address.`);
+        lookupAllAssets
+          ? "No stakes found for this address on any asset."
+          : `No ${selected().meta.symbol} stakes found for this address.`,
+        { allAssets: lookupAllAssets });
     } finally {
       btn.disabled = false;
       btn.textContent = "Look up stakes";
@@ -2323,11 +2368,12 @@
     const needed = ACTIVITY_PAGE_SIZE * (activityPage + 1);
 
     const list = Object.values(assets).filter(a => a.staking);
-    el.innerHTML = `<p class="msg">Reading stake records from ${list.length} contracts… ${spinner("Loading stake records")}</p>`;
+    el.innerHTML = `<p class="msg">Reading stake records from ${list.length} contracts… ${
+      spinner("Loading stake records", "activity")}</p>`;
     btn.disabled = true;
 
     try {
-      const results = await Promise.all(list.map(async (a) => {
+      const results = await trackAll("activity", list.map(async (a) => {
         try {
           const counter = await a.staking.stakeIDCounter();
           const top = counter.toNumber();
@@ -2545,9 +2591,9 @@
   async function renderPortfolio() {
     const el = $('portfolio');
     if (!account) return;
-    el.innerHTML = `<p class="msg">Totalling every asset… ${spinner("Loading portfolio")}</p>`;
+    el.innerHTML = `<p class="msg">Totalling every asset… ${spinner("Loading portfolio", "portfolio")}</p>`;
 
-    const entries = await Promise.all(Object.values(assets).map(async (a) => {
+    const entries = await trackAll("portfolio", Object.values(assets).map(async (a) => {
       try {
         const stakes = await fetchStakes(a, account);
         let tokens = ZERO();
@@ -2843,6 +2889,12 @@
   $('wallet').addEventListener('keydown', (e) => { if (e.key === "Enter") lookupStake(); });
   $('connectBtn').addEventListener('click', connect);
   $('disconnectBtn').addEventListener('click', disconnect);
+  $('lookupAllBox').addEventListener('change', (e) => {
+    lookupAllAssets = e.target.checked;
+    // Only re-runs if an address has already been looked up.
+    if ($('wallet').value.trim() && $('stakeResult').innerHTML.trim()) lookupStake();
+  });
+
   $('actAllBox').addEventListener('change', (e) => {
     activityAllAssets = e.target.checked;
     activityStack = [];
