@@ -178,6 +178,11 @@
   .contract-row .k { color: var(--text-dim); min-width: 62px; }
   .contract-row a { font-family: 'Courier New', monospace; word-break: break-all; }
 
+  .act-controls {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .act-controls .check { margin-top: 0; }
+
   .cal-bar {
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
@@ -301,6 +306,10 @@
   .detail-list .muted { color: var(--text-dim); }
   .detail-list .overdue { color: var(--amber); }
   .detail-list .chain-cell { height: 20px; width: auto; vertical-align: -5px; }
+  /* Wordmarks are wide and short; icons are square. Height-matched so a row
+     of mixed assets keeps one baseline. */
+  .detail-list .coin-cell { height: 17px; width: auto; vertical-align: -4px; margin-left: 5px; }
+  .detail-list .coin-wrap { white-space: nowrap; display: inline-flex; align-items: center; }
   .detail-list .ticker { color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em; }
   .detail-list .row-closed td { color: var(--text-dim); }
   .detail-list .row-error td { color: var(--red); }
@@ -437,15 +446,20 @@
   </section>
 
   <section>
-    <h2>Contract Activity</h2>
+    <h2>Recent Time Locks</h2>
     <div class="panel">
       <div class="wallet-bar">
         <div class="msg">Every stake on this asset's contract, newest first, ten at a time.</div>
         <button id="activityBtn">Refresh</button>
       </div>
-      <div class="seg" id="actFilter">
-        <button class="seg-btn active" data-kind="stake">Stakes</button>
-        <button class="seg-btn" data-kind="unstake">Unstakes</button>
+      <div class="act-controls">
+        <div class="seg" id="actFilter">
+          <button class="seg-btn active" data-kind="stake">Stakes</button>
+          <button class="seg-btn" data-kind="unstake">Unstakes</button>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="actAllBox"> Show stakes from all assets
+        </label>
       </div>
       <div id="activity"></div>
     </div>
@@ -932,6 +946,23 @@
     return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
   };
   const short = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+
+  // A wordmark already spells the ticker, so it stands alone; an icon doesn't,
+  // so it sits beside the text. Same rule as the pool stats and portfolio.
+  function coinCell(a) {
+    const mark = a.logo
+      ? `<img class="coin-cell" src="${a.logo}" alt="${esc(a.meta.symbol)}" title="${esc(a.meta.symbol)}">`
+      : "";
+    return `<span class="coin-wrap">${a.wordmark ? mark
+      : `<span class="ticker">${esc(a.meta.symbol)}</span>${mark}`}</span>`;
+  }
+
+  function chainCell(chainId) {
+    const net = NETWORKS[chainId];
+    return net.logo
+      ? `<img class="chain-cell" src="${net.logo}" alt="${esc(net.short)}" title="${esc(net.short)}">`
+      : `<span class="muted">${esc(net.short)}</span>`;
+  }
 
   function unitLabel(text, a) {
     const mark = a.logo
@@ -1481,17 +1512,12 @@
         return `<span class="st st-${tone}">${st.text}</span>`;
       } },
     { key: "chain",   label: "Chain",   sort: s => NETWORKS[s.asset.chainId].short,
-      cell: s => {
-        const net = NETWORKS[s.asset.chainId];
-        return net.logo
-          ? `<img class="chain-cell" src="${net.logo}" alt="${esc(net.short)}" title="${esc(net.short)}">`
-          : `<span class="muted">${esc(net.short)}</span>`;
-      } },
+      cell: s => chainCell(s.asset.chainId) },
     { key: "ticker",  label: "Ticker",  sort: s => s.asset.meta.symbol,
       cell: s => `<span class="ticker">${esc(s.asset.meta.symbol)}</span>` },
     { key: "id",      label: "Stake",   sort: s => Number(s.id.toString()),
       cell: s => "#" + esc(s.id.toString()) },
-    { key: "amount",  label: "Amount",  num: true, sort: s => toFloat(s.info.amount, s.asset),
+    { key: "amount",  label: "Tokens",  num: true, sort: s => toFloat(s.info.amount, s.asset),
       cell: s => fmt(s.info.amount, s.asset, 4) },
     { key: "value",   label: "Value",   num: true,
       sort: s => s.asset.price != null ? toFloat(s.info.amount, s.asset) * s.asset.price : -1,
@@ -1910,7 +1936,7 @@
     }
   }
 
-  // ================= Contract activity =================
+  // ================= Recent time locks =================
   // Stake records are addressable by ID, so the feed walks stakeIDCounter
   // backwards a page at a time. No eth_getLogs, which several of these chains'
   // public endpoints won't serve over useful ranges. The tradeoff is that
@@ -1921,6 +1947,10 @@
   let activityRows = [];             // the current page, already filtered
   let activityMeta = null;
   let activityStack = [];            // starting ID per page, so Newer can go back
+  let activityAllAssets = false;     // off by default, like the other toggles
+  // Merged mode has to read the newest N from every contract to know which are
+  // globally newest, so depth is capped rather than paging forever.
+  const ACTIVITY_MERGE_MAX_PAGES = 5;
 
   function activityCombined(r) {
     const a = r.asset;
@@ -1931,11 +1961,13 @@
   const ACTIVITY_COLUMNS = [
     { key: "kind", label: "Event", sort: r => r.kind,
       cell: r => `<span class="st ev-${r.kind}">${r.kind === "stake" ? "Stake" : "Unstake"}</span>` },
-    { key: "ticker", label: "Ticker", sort: r => r.asset.meta.symbol,
-      cell: r => `<span class="ticker">${esc(r.asset.meta.symbol)}</span>` },
+    { key: "chain",  label: "Chain", sort: r => NETWORKS[r.asset.chainId].short,
+      cell: r => chainCell(r.asset.chainId) },
+    { key: "ticker", label: "Coin", sort: r => r.asset.meta.symbol,
+      cell: r => coinCell(r.asset) },
     { key: "id", label: "Stake", num: true, sort: r => Number(r.stakeId.toString()),
       cell: r => "#" + esc(r.stakeId.toString()) },
-    { key: "amount", label: "Amount", num: true,
+    { key: "amount", label: "Tokens", num: true,
       sort: r => r.amount ? toFloat(r.amount, r.asset) : -1,
       cell: r => r.amount ? fmt(r.amount, r.asset, 4) : "—" },
     { key: "value", label: "Value", num: true,
@@ -2088,14 +2120,44 @@
   function paintActivity() {
     const el = $('activity');
     if (!activityMeta) return;
-    const { top, from, to, nextStart, capped, readable, otherKind } = activityMeta;
+    const m = activityMeta;
+    const { top, from, to, nextStart, capped, readable, otherKind } = m;
 
+    // In merged mode there's no ID cursor — paging walks a pooled list.
+    const canGoOlder = m.merged ? (m.hasMore && !m.atDepthCap) : (nextStart >= 1);
     const pager = `
       <div class="pager">
         <button id="actPrev" ${activityPage > 0 ? "" : "disabled"}>← Newer</button>
         <span class="pager-label">Page ${activityPage + 1}</span>
-        <button id="actNext" ${nextStart >= 1 ? "" : "disabled"}>Older →</button>
+        <button id="actNext" ${canGoOlder ? "" : "disabled"}>Older →</button>
       </div>`;
+
+    if (m.merged) {
+      const label = activityFilter === "stake" ? "open stakes" : "unstaked positions";
+      const notes = [];
+      if (m.failed.length) notes.push(`Couldn't reach ${esc(m.failed.join(", "))}.`);
+      if (m.capped) notes.push("Some contracts hit the per-contract scan limit.");
+      if (m.atDepthCap) notes.push("This is as deep as the merged view goes — switch the toggle off to page further into one asset.");
+
+      if (activityRows.length === 0) {
+        el.innerHTML = `<p class="msg">No ${label} found across ${m.contracts} contracts.
+          ${notes.join(" ")}</p>${pager}`;
+      } else {
+        el.innerHTML = "";
+        renderTable(activityRows, el, {
+          columns: ACTIVITY_COLUMNS,
+          defaultSort: { key: "when", dir: "desc" },
+          rowClass: (r) => r.kind === "unstake" ? "row-closed" : "",
+          hint: `${activityRows.length} ${label}, newest first across ${m.contracts} contracts on
+            ${new Set(activityRows.map(r => r.asset.chainId)).size} chain${new Set(activityRows.map(r => r.asset.chainId)).size === 1 ? "" : "s"}.
+            ${notes.join(" ")}`
+        });
+        el.insertAdjacentHTML("beforeend", pager);
+      }
+      $('actPrev').addEventListener('click', () => loadActivity(activityPage - 1));
+      $('actNext').addEventListener('click', () => loadActivity(activityPage + 1));
+      return;
+    }
 
     if (activityRows.length === 0) {
       const what = activityFilter === "stake" ? "open stakes" : "unstaked positions";
@@ -2123,7 +2185,73 @@
     $('actNext').addEventListener('click', () => loadActivity(activityPage + 1));
   }
 
+  // All-assets mode. To know which records are globally newest, each contract
+  // has to give up its own newest first — so this reads the top N from every
+  // asset, merges, and sorts by time. N grows with the page, which is why the
+  // depth is capped: page 5 already means 50 records from each of 12 contracts.
+  async function loadActivityMerged(page = 0) {
+    const el = $('activity');
+    const btn = $('activityBtn');
+    activityPage = Math.max(0, Math.min(page, ACTIVITY_MERGE_MAX_PAGES - 1));
+    const needed = ACTIVITY_PAGE_SIZE * (activityPage + 1);
+
+    const list = Object.values(assets).filter(a => a.staking);
+    el.innerHTML = `<p class="msg">Reading stake records from ${list.length} contracts…</p>`;
+    btn.disabled = true;
+
+    try {
+      const results = await Promise.all(list.map(async (a) => {
+        try {
+          const counter = await a.staking.stakeIDCounter();
+          const top = counter.toNumber();
+          if (!top) return { rows: [], capped: false };
+          const p = await collectPage(a, top, activityFilter, needed);
+          return { rows: p.rows, capped: p.capped };
+        } catch (e) {
+          // One unreachable chain shouldn't empty the whole feed.
+          return { rows: [], failed: a.meta.symbol };
+        }
+      }));
+
+      const merged = results.flatMap(r => r.rows);
+      const failed = results.map(r => r.failed).filter(Boolean);
+      const capped = results.some(r => r.capped);
+
+      // Newest first across every chain. Records without a timestamp sink
+      // rather than jumping to the top on a falsy comparison.
+      merged.sort((x, y) => (y.time || 0) - (x.time || 0));
+
+      const startAt = activityPage * ACTIVITY_PAGE_SIZE;
+      const slice = merged.slice(startAt, startAt + ACTIVITY_PAGE_SIZE);
+
+      // Hashes come from each asset's own chain, so group before asking.
+      const byAsset = new Map();
+      for (const r of slice) {
+        if (!byAsset.has(r.asset.key)) byAsset.set(r.asset.key, { a: r.asset, rows: [] });
+        byAsset.get(r.asset.key).rows.push(r);
+      }
+      await Promise.all([...byAsset.values()].map(({ a, rows }) =>
+        attachTxHashes(a, rows).catch(() => {})));
+
+      activityRows = slice;
+      activityMeta = {
+        merged: true,
+        contracts: list.length,
+        pooled: merged.length,
+        hasMore: merged.length > startAt + ACTIVITY_PAGE_SIZE,
+        atDepthCap: activityPage >= ACTIVITY_MERGE_MAX_PAGES - 1,
+        capped, failed
+      };
+      paintActivity();
+    } catch (e) {
+      el.innerHTML = `<p class="msg error">Couldn't read stake records: ${esc(e.reason || e.message || e)}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function loadActivity(page = 0) {
+    if (activityAllAssets) return loadActivityMerged(page);
     const a = selected();
     const el = $('activity');
     const btn = $('activityBtn');
@@ -2588,6 +2716,12 @@
   $('wallet').addEventListener('keydown', (e) => { if (e.key === "Enter") lookupStake(); });
   $('connectBtn').addEventListener('click', connect);
   $('disconnectBtn').addEventListener('click', disconnect);
+  $('actAllBox').addEventListener('change', (e) => {
+    activityAllAssets = e.target.checked;
+    activityStack = [];
+    loadActivity(0);
+  });
+
   $('calAllBox').addEventListener('change', (e) => {
     calAllAssets = e.target.checked;
     calSelected = null;
