@@ -925,7 +925,14 @@
   const providers = {};
   function providerFor(chainId) {
     if (!providers[chainId]) {
-      providers[chainId] = new ethers.providers.JsonRpcProvider(NETWORKS[chainId].rpc);
+      // Static: the chain behind a given RPC never changes, but a plain
+      // JsonRpcProvider re-checks it before almost every call. That doubled the
+      // request count on the stake feed — eth_chainId was outnumbering the reads
+      // it was chaperoning.
+      providers[chainId] = new ethers.providers.StaticJsonRpcProvider(
+        NETWORKS[chainId].rpc,
+        { chainId, name: NETWORKS[chainId].short || String(chainId) }
+      );
     }
     return providers[chainId];
   }
@@ -1260,6 +1267,24 @@
     $('assetTitle').innerHTML = a.logo
       ? `<img class="brand" src="${a.logo}" alt="${esc(a.meta.symbol)}">`
       : "$" + esc(a.meta.symbol);
+    paintTab(a);
+  }
+
+  /* The browser tab follows the selected asset as well as the page does — its
+     logo as the icon, its symbol in the title. Several of these open at once is
+     the normal way to use it, and every tab reading "$MORE Dashboard" made them
+     impossible to tell apart. */
+  function paintTab(a) {
+    document.title = "$" + a.meta.symbol + " Dashboard";
+    if (!a.logo) return;
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    // the logos are data URIs already in the page, so this costs no request
+    if (link.href !== a.logo) link.href = a.logo;
   }
 
   // Both addresses for the selected asset, each linked to its own chain's
@@ -2204,6 +2229,66 @@
   const ACTIVITY_BATCH = 20;      // IDs read per round trip while searching
   const ACTIVITY_MAX_SCAN = 300;  // ceiling per page, so a sparse filter can't run away
 
+  // Multicall3 is deployed at the same address on all four chains here, so a
+  // page of records is one request rather than one per record. Availability is
+  // settled per chain on first use; anything that fails falls back to reading
+  // them individually, which is what this did before.
+  const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+  const MULTICALL3_ABI = [
+    "function aggregate3((address target, bool allowFailure, bytes callData)[] calls) payable returns ((bool success, bytes returnData)[] returnData)"
+  ];
+  const multicallOk = {};   // chainId -> false once known missing
+
+  async function aggregateCalls(a, fn, ids) {
+    const iface = a.staking.interface;
+    const mc = new ethers.Contract(MULTICALL3, MULTICALL3_ABI, providerFor(a.chainId));
+    const calls = ids.map(id => ({
+      target: a.staking.address,
+      allowFailure: true,
+      callData: iface.encodeFunctionData(fn, [id])
+    }));
+    const res = await mc.callStatic.aggregate3(calls);
+    return res.map(r => {
+      if (!r.success || !r.returnData || r.returnData === "0x") return null;
+      try { return iface.decodeFunctionResult(fn, r.returnData)[0]; } catch (e) { return null; }
+    });
+  }
+
+  /* One batch of records in two requests: every getStakeInfo, then earned() for
+     just the ones still open. Returns null if this chain has no multicall, so the
+     caller can fall back. */
+  async function readBatchViaMulticall(a, ids) {
+    if (multicallOk[a.chainId] === false) return null;
+
+    const infos = await aggregateCalls(a, "getStakeInfo", ids);
+    // every call failing means the aggregator isn't there, not that the records
+    // are empty — an absent record still decodes to a zeroed struct
+    if (!infos.some(Boolean)) { multicallOk[a.chainId] = false; return null; }
+    multicallOk[a.chainId] = true;
+
+    const openAt = [];
+    infos.forEach((info, i) => {
+      if (!info) return;
+      const unused = info.staker === ethers.constants.AddressZero
+        && info.startTime.isZero() && info.amount.isZero();
+      if (!unused && !isClosed(info)) openAt.push(i);
+    });
+
+    const pending = new Map();
+    if (openAt.length) {
+      const earned = await aggregateCalls(a, "earned", openAt.map(i => ids[i])).catch(() => []);
+      openAt.forEach((idx, k) => pending.set(idx, earned[k] ?? null));
+    }
+
+    return infos.map((info, i) => {
+      if (!info) return null;
+      const unused = info.staker === ethers.constants.AddressZero
+        && info.startTime.isZero() && info.amount.isZero();
+      if (unused) return null;
+      return recordToRow(a, ids[i], info, pending.get(i) ?? null);
+    });
+  }
+
   async function collectPage(a, startId, filter, size) {
     const rows = [];
     let cursor = startId, scanned = 0, lastSeen = startId, exhausted = false;
@@ -2214,9 +2299,18 @@
       for (let i = cursor; i > 0 && batch.length < ACTIVITY_BATCH; i--) batch.push(i);
       scanned += batch.length;
 
-      const recs = await mapLimit(batch, 3, async (id) => {
-        try {
-          const info = await a.staking.getStakeInfo(id);
+      const recs = await readBatchViaMulticall(a, batch).catch(() => null)
+        || await mapLimit(batch, 8, async (id) => {
+          // A record that does not exist answers with a zeroed struct, so an
+          // error here is the transport failing, not an empty slot. Treating the
+          // two alike dropped real stakes out of the feed, so this retries once
+          // before accepting a blank.
+          let info = null;
+          for (let attempt = 0; attempt < 2 && !info; attempt++) {
+            try { info = await a.staking.getStakeInfo(id); }
+            catch (e) { if (attempt) return null; await new Promise(r => setTimeout(r, 120)); }
+          }
+          if (!info) return null;
           const unused = info.staker === ethers.constants.AddressZero
             && info.startTime.isZero() && info.amount.isZero();
           if (unused) return null;
@@ -2224,8 +2318,7 @@
             ? null
             : await a.staking.earned(id).catch(() => null);
           return recordToRow(a, id, info, pending);
-        } catch (e) { return null; }
-      });
+        });
 
       for (let i = 0; i < batch.length; i++) {
         lastSeen = batch[i];
