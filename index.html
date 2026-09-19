@@ -54,6 +54,12 @@
   header { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 40px; }
   .eyebrow { font-family: var(--mono); font-size: 13px; color: var(--text-dim); letter-spacing: 0.02em; }
   h1 { font-size: 42px; margin: 26px 0 10px; font-weight: 400; letter-spacing: -0.01em; }
+  /* The heading ships empty and keeps the logo's height in reserve. It used to
+     carry a "$MORE" placeholder, which flashed up before the script swapped the
+     mark in — and since the text is half the logo's height, everything below it
+     jumped down as the image landed. Centred so a text fallback, for an asset
+     with no logo, still sits properly in the reserved box. */
+  #assetTitle { min-height: 92px; display: flex; align-items: center; }
   h1 .brand { display: block; height: 92px; width: auto; max-width: 100%; }
   .sub { color: var(--text-dim); font-size: 15px; max-width: 52ch; line-height: 1.5; font-family: var(--sans); }
 
@@ -120,6 +126,52 @@
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     margin: 0; padding: 4px 8px; font-size: 12px; border-color: var(--line);
   }
+  /* Pick the unlock date instead of counting days to it. The term is still stored
+     and sent as a day count — the calendar only works out the number for you. */
+  .days-wrap { position: relative; }
+  .days-wrap input { padding-right: 40px; }
+  .cal-btn {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    margin: 0; padding: 5px 7px; line-height: 0;
+    border-color: var(--line); color: var(--text-dim);
+  }
+  .cal-btn:hover:not(:disabled), .cal-btn[aria-expanded="true"] {
+    color: var(--accent); border-color: var(--accent-dim);
+  }
+  .daypick {
+    position: absolute; z-index: 30; top: calc(100% + 6px); right: 0;
+    width: 262px; padding: 10px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.45);
+  }
+  .daypick[hidden] { display: none; }
+  .daypick-head {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+    gap: 8px; margin-bottom: 8px;
+  }
+  .daypick-head span {
+    text-align: center; font-family: var(--sans); font-size: 12.5px; color: var(--heading);
+  }
+  .daypick-head button { margin: 0; padding: 2px 8px; font-size: 13px; border-color: var(--line); }
+  .daypick-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .daypick-grid .dp-head {
+    text-align: center; font-size: 9.5px; color: var(--text-dim);
+    padding: 2px 0; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .daypick-grid button {
+    margin: 0; padding: 0; height: 28px; border: 1px solid transparent; border-radius: 3px;
+    background: none; color: var(--text); font-family: var(--mono); font-size: 12px;
+    font-variant-numeric: tabular-nums; cursor: pointer;
+  }
+  .daypick-grid button:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+  .daypick-grid button:disabled { color: var(--line); cursor: default; }
+  .daypick-grid button.sel { background: rgba(150,201,156,0.20); color: var(--accent); border-color: var(--accent-dim); }
+  .daypick-grid .dp-blank { height: 28px; }
+  .daypick-foot {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+    font-family: var(--sans); font-size: 11.5px; color: var(--text-dim); text-align: center;
+  }
+
   .pct-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .pct-btn {
     margin: 0; padding: 9px 10px; flex: 1 1 auto;
@@ -153,7 +205,20 @@
   .wallet-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; font-family: var(--sans); font-size: 14px; }
   .wallet-bar .addr { font-family: var(--mono); color: var(--accent); }
   .wallet-bar button { margin-top: 0; }
+  /* nothing on the left of this one any more, so keep the controls at the right */
+  .wallet-bar-actions { justify-content: flex-end; }
   .wallet-balance { color: var(--text-dim); margin-top: 4px; }
+
+  /* The connected wallet and what it holds, sat under the amount controls — it is
+     read while deciding how much to stake, not while looking at the wallet panel
+     further down the page. The .addr rule above is scoped to .wallet-bar, so the
+     mono treatment is restated here rather than inherited. */
+  .stake-wallet { margin-top: 12px; font-family: var(--sans); font-size: 13px; }
+  .stake-wallet .addr { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+  .stake-wallet .wallet-balance {
+    color: var(--text); margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
   .coin { height: 1.15em; width: auto; vertical-align: -0.2em; margin-left: 7px; }
   /* Sized from the text it sits in, so it tracks the value's font size. The
      wordmark has no ascenders or descenders, so it needs more than cap height
@@ -161,25 +226,60 @@
   .unit { height: 1.25em; width: auto; vertical-align: -0.24em; margin-left: 4px; }
 
   .portfolio-total {
-    font-size: 30px; color: var(--accent); font-variant-numeric: tabular-nums;
-    margin-top: 4px;
+    font-size: 34px; color: var(--accent); font-variant-numeric: tabular-nums;
+    margin-top: 6px; line-height: 1.15;
   }
+  /* The figure is the point of this panel, so it centres on the panel itself and
+     the action stays out at the right. Matching outer thirds mean the total does
+     not drift with the button's width. Scoped, since other bars are two-sided. */
+  #portfolioPanel .wallet-bar {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  }
+  #portfolioPanel .wallet-bar > div { grid-column: 2; text-align: center; }
+  #portfolioPanel .wallet-bar button { grid-column: 3; justify-self: end; }
+  @media (max-width: 620px) {
+    #portfolioPanel .wallet-bar { grid-template-columns: 1fr; gap: 14px; justify-items: center; }
+    #portfolioPanel .wallet-bar > div,
+    #portfolioPanel .wallet-bar button { grid-column: 1; justify-self: center; }
+  }
+  /* One tidy column down the middle of the panel rather than a full-width sprawl.
+     Three tracks, so the marks, the chains and the figures each line up down the
+     list however many assets are held — the amount used to be right-aligned inside
+     a 210px block, which left it floating in the middle of an empty row. */
+  .portfolio-list { max-width: 660px; margin: 20px auto 0; }
+  /* Fixed tracks on the two right-hand columns. Every row is its own grid, so an
+     `auto` track sizes to that row alone and the figures drift a few pixels apart
+     down the list — the one thing right-aligning them was meant to prevent. */
   .holding {
-    display: flex; align-items: center; gap: 12px; padding: 12px 0;
+    display: grid; grid-template-columns: 96px 1fr 196px 112px;
+    align-items: center; gap: 16px; padding: 11px 0;
     border-bottom: 1px solid rgba(53, 69, 59, 0.6);
     font-family: var(--sans); font-size: 14px;
   }
   .holding:last-child { border-bottom: none; }
-  /* amount, mark, chain — then value pushed to the right edge */
+  .holding .mark { display: flex; align-items: center; min-height: 24px; }
+  .holding img { height: 22px; width: auto; max-width: 96px; }
+  .holding .sym { color: var(--text); }
+  .holding .net { color: var(--text-dim); font-size: 12.5px; }
   .holding .tokens {
-    color: var(--text); font-variant-numeric: tabular-nums;
-    min-width: 210px; text-align: right; flex: 0 0 auto;
+    color: var(--text); text-align: right;
+    font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
   }
-  .holding img { height: 24px; width: auto; max-width: 84px; flex: 0 0 auto; }
-  .holding .sym { color: var(--text); min-width: 62px; }
-  .holding .net { color: var(--text-dim); font-size: 12px; flex: 1 1 auto; }
   .holding .val { color: var(--accent); }
   .holding.empty .tokens, .holding.empty .val { color: var(--text-dim); }
+  /* The day's move. Same up/down colours the headline delta already uses, so a
+     gain reads the same wherever it appears on the page. */
+  .holding .chg-cell {
+    text-align: right; font-family: var(--mono); font-size: 12.5px;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .holding .chg.up { color: var(--green); }
+  .holding .chg.down { color: var(--red); }
+  .holding .chg-pct { opacity: 0.75; }
+  @media (max-width: 620px) {
+    .holding { grid-template-columns: 70px 1fr auto; gap: 10px; }
+    .holding .chg-cell { grid-column: 2 / -1; text-align: left; font-size: 12px; }
+  }
 
   .contracts {
     margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line);
@@ -229,10 +329,21 @@
   }
   .is-stale { opacity: 0.55; transition: opacity 120ms linear; }
 
+  /* Three tracks with matching outer thirds, so the checkbox centres on the row
+     itself rather than on whatever is left over after the buttons. A plain flex
+     row packed both to the left and left the toggle sitting wherever the segment
+     control happened to end. */
   .act-controls {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; gap: 18px;
   }
-  .act-controls .check { margin-top: 0; }
+  .act-controls .seg { justify-self: start; min-width: 0; }
+  .act-controls .check { margin-top: 0; justify-self: center; }
+  /* too narrow to hold both across one row — stack and read from the left */
+  @media (max-width: 620px) {
+    .act-controls { grid-template-columns: 1fr; gap: 12px; }
+    .act-controls .check { justify-self: start; }
+  }
 
   .cal-bar {
     display: flex; align-items: center; justify-content: space-between;
@@ -267,14 +378,21 @@
   .cal-cell.has { cursor: pointer; background: rgba(150,201,156,0.07); }
   .cal-cell.has:hover { background: rgba(150,201,156,0.14); }
   .cal-cell.sel { outline: 1px solid var(--accent); }
-  .cal-pill {
-    display: inline-block; margin-top: 5px; padding: 1px 6px;
-    border-radius: 999px; font-size: 11px; line-height: 1.5;
-    background: rgba(150,201,156,0.18); color: var(--accent);
+  /* How many unlock, as a bare figure. Amber is kept for a day that is already
+     late — that is a warning, not decoration, and dropping it would lose the one
+     thing the colour was carrying. */
+  .cal-count {
+    display: block; margin-top: 4px;
+    font-family: var(--mono); font-size: 15px; line-height: 1.2;
+    color: var(--accent); font-variant-numeric: tabular-nums;
   }
-  .cal-pill.green { background: rgba(150,201,156,0.22); color: var(--accent); }
-  .cal-pill.amber { background: rgba(224,179,88,0.18); color: var(--amber); }
-  .cal-tick { display: block; font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .cal-count.amber { color: var(--amber); }
+  .cal-coins { display: flex; align-items: center; gap: 4px; margin-top: 4px; min-height: 14px; }
+  /* Bounded on both axes so a wide wordmark and a square icon both fit the cell
+     without either being squashed. */
+  .cal-coin { max-height: 14px; max-width: 38px; width: auto; height: auto; }
+  .cal-more { font-size: 10px; color: var(--text-dim); }
+  .cal-tick { font-size: 10px; color: var(--text-dim); }
 
   .cal-detail { margin-top: 14px; }
   .cal-detail .cal-day-head {
@@ -308,7 +426,7 @@
   .sw-accent { background: rgba(150,201,156,0.35); }
   @media (max-width: 720px) {
     .cal-cell { min-height: 48px; padding: 3px 4px; }
-    .cal-tick { display: none; }
+    .cal-coins { display: none; }
     .cal-month { min-width: 130px; font-size: 9px; }
   }
 
@@ -367,13 +485,18 @@
   /* Wordmarks are wide and short; icons are square. Height-matched so a row
      of mixed assets keeps one baseline. */
   .detail-list .coin-cell { height: 17px; width: auto; vertical-align: -4px; }
-  /* A fixed minimum width means every coin block is the same size, so centring the
-     block in its column still leaves the icons and the labels on shared x's — the
-     group sits balanced under the header without going ragged. */
+  /* Every coin block is the same fixed size, so centring the block in its column
+     still leaves the marks and the labels on shared x's — the group sits balanced
+     under the header without going ragged. */
   .detail-list .coin-wrap {
     white-space: nowrap; display: inline-flex; align-items: center; gap: 7px;
-    min-width: 72px; justify-content: flex-start; text-align: left;
+    width: 72px; justify-content: flex-start; text-align: left;
   }
+  /* A wordmark is its own name, so it takes the block from the same left edge the
+     icons start at rather than sitting behind an empty icon slot — that gap was
+     what made MORE read as indented and wider than everything around it. */
+  .detail-list .is-wordmark { gap: 0; }
+  .detail-list .is-wordmark .coin-cell { max-width: 100%; }
   .detail-list .coin-slot { width: 18px; flex: none; display: inline-flex; align-items: center; justify-content: flex-start; }
 
   /* Marker columns — a badge, a chain mark, a coin — centre under their heading.
@@ -492,7 +615,8 @@
       <span id="networkList">Ethereum</span>, covering
       <span id="assetList">a range of assets</span>. Prices come from public markets and staking
       data is read directly from the blockchain. Not affiliated with moretokens.com.</div>
-    <h1 id="assetTitle">$MORE</h1>
+    <!-- left empty on purpose: see #assetTitle in the stylesheet -->
+    <h1 id="assetTitle"></h1>
 
     <div class="price-row">
       <div class="price-big" id="price">—</div>
@@ -582,11 +706,7 @@
     </div>
 
     <div class="panel hidden" id="walletPanel">
-      <div class="wallet-bar">
-        <div>
-          <span class="addr" id="walletAddr">—</span>
-          <div class="wallet-balance" id="walletBalance">—</div>
-        </div>
+      <div class="wallet-bar wallet-bar-actions">
         <div class="wallet-actions">
           <button id="disconnectBtn">Disconnect</button>
           <label class="check">
@@ -619,10 +739,33 @@
             <button class="pct-btn" data-pct="20">20%</button>
             <button class="pct-btn" data-pct="35">35%</button>
           </div>
+          <div class="stake-wallet">
+            <span class="addr" id="walletAddr">—</span>
+            <div class="wallet-balance" id="walletBalance">—</div>
+          </div>
         </div>
         <div class="field">
           <label for="stakeDays">Lock duration (days)</label>
-          <input type="number" id="stakeDays" placeholder="90" min="1" max="5555" step="1">
+          <div class="days-wrap">
+            <input type="number" id="stakeDays" placeholder="90" min="1" max="5555" step="1">
+            <button type="button" class="cal-btn" id="daysCalBtn" aria-expanded="false"
+                    aria-label="Pick an unlock date" title="Pick an unlock date">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+                <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M1.5 6.5h13" stroke="currentColor" stroke-width="1.3"/>
+                <path d="M5 1.5v3M11 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="daypick" id="daysCal" hidden>
+              <div class="daypick-head">
+                <button type="button" id="dpPrev" aria-label="Previous month">&#8592;</button>
+                <span id="dpMonth">—</span>
+                <button type="button" id="dpNext" aria-label="Next month">&#8594;</button>
+              </div>
+              <div class="daypick-grid" id="dpGrid"></div>
+              <div class="daypick-foot" id="dpFoot"></div>
+            </div>
+          </div>
           <div class="preview" id="unlockPreview"></div>
         </div>
       </div>
@@ -1050,7 +1193,7 @@
        different places. A wordmark is its own label, so it takes the label side
        and leaves the slot empty. */
     return a.wordmark
-      ? `<span class="coin-wrap"><span class="coin-slot"></span>${mark}</span>`
+      ? `<span class="coin-wrap is-wordmark">${mark}</span>`
       : `<span class="coin-wrap"><span class="coin-slot">${mark}</span><span class="ticker">${esc(a.meta.symbol)}</span></span>`;
   }
 
@@ -1897,9 +2040,23 @@
         const states = list.map(calUnlockState);
         const tone = states.includes("late") ? "amber"
                    : states.includes("ready") ? "green" : "";
-        const tickers = [...new Set(list.map(s => s.asset.meta.symbol))];
-        pill = `<span class="cal-pill ${tone}">${list.length} unlock${list.length > 1 ? "s" : ""}</span>`
-             + `<span class="cal-tick">${esc(tickers.slice(0, 2).join(", "))}${tickers.length > 2 ? "…" : ""}</span>`;
+        // The count on its own, and the coins as their marks — a cell is small and
+        // the word "unlock" repeated down a month said nothing the column heading
+        // did not. The full wording stays on the cell's aria-label.
+        const onDay = [];
+        const seenKeys = new Set();
+        for (const s of list) {
+          if (seenKeys.has(s.asset.key)) continue;
+          seenKeys.add(s.asset.key);
+          onDay.push(s.asset);
+        }
+        const marks = onDay.slice(0, 3).map(a => a.logo
+          ? `<img class="cal-coin" src="${a.logo}" alt="${esc(a.meta.symbol)}" title="${esc(a.meta.symbol)}">`
+          : `<span class="cal-tick">${esc(a.meta.symbol)}</span>`).join("");
+        pill = `<span class="cal-count ${tone}">${list.length}</span>`
+             + `<span class="cal-coins">${marks}`
+             + (onDay.length > 3 ? `<span class="cal-more">+${onDay.length - 3}</span>` : "")
+             + `</span>`;
       }
       html += `<div class="${cls.join(" ")}" data-day="${k}" tabindex="0" role="button"
                     aria-label="${d.toLocaleDateString(undefined, { month: "long", day: "numeric" })}, ${list.length} unlock${list.length === 1 ? "" : "s"}">
@@ -2760,15 +2917,31 @@
       const mark = a.logo
         ? `<img src="${a.logo}" alt="${esc(a.meta.symbol)}" title="${esc(a.meta.symbol)}">`
         : `<span class="sym">${esc(a.meta.symbol)}</span>`;
-      // Value sits with the amount it belongs to, not in a far-right column.
+      /* What the last 24 hours did to this holding, in money and in percent. The
+         cash figure is what the position actually moved by, so it is taken off the
+         value 24h ago — v/(1+c) — rather than applying the percentage to today's
+         value, which overstates it on a large move. */
+      const chg = a.change;
+      const chgUsd = (value != null && chg != null && chg > -100)
+        ? value * chg / (100 + chg) : null;
+      const chgCell = chg == null
+        ? `<span class="muted">—</span>`
+        : `<span class="chg ${chg >= 0 ? "up" : "down"}">` +
+          (chgUsd == null ? "" : `${chg >= 0 ? "+" : "−"}${usd(Math.abs(chgUsd))} `) +
+          `<span class="chg-pct">${chg >= 0 ? "+" : "−"}${Math.abs(chg).toFixed(2)}%</span></span>`;
+
+      // Mark, then where it lives, then what is held — value still sits with the
+      // amount it belongs to rather than in a column of its own — then the day's move.
       return `
         <div class="holding${held ? "" : " empty"}">
+          <span class="mark">${mark}</span>
+          <span class="net">${esc(NETWORKS[a.chainId].short)}</span>
           <span class="tokens">${tokens ? fmt(tokens, a, 4) : "—"}${value == null ? ""
             : ` <span class="val">(${usd(value)})</span>`}</span>
-          ${mark}
-          <span class="net">${esc(NETWORKS[a.chainId].short)}</span>
+          <span class="chg-cell" title="Change over the last 24 hours">${chgCell}</span>
         </div>`;
     }).join("");
+    el.innerHTML = `<div class="portfolio-list">${el.innerHTML}</div>`;
   }
 
   function refreshMyStakes() {
@@ -2798,6 +2971,8 @@
     $('maxBtn').disabled = !ready;
     document.querySelectorAll('.pct-btn').forEach(b => { b.disabled = !ready; });
     $('stakeDays').disabled = !ready;
+    $('daysCalBtn').disabled = !ready;
+    if (!ready) dpClose();
     $('approveHint').textContent = a.kind === "erc20"
       ? "First-time staking needs an approval transaction, then a second to open the stake."
       : "Staking sends ETH directly, so it's a single transaction. Max leaves a little behind for gas.";
@@ -2852,6 +3027,98 @@
     el.textContent = "(unlocks " + when.toLocaleDateString(undefined, {
       weekday: "short", year: "numeric", month: "short", day: "numeric"
     }) + ")";
+  }
+
+  /* ---- Pick the unlock date ----
+     The contract takes a day count, so this only ever works one out: choose a
+     date and it fills the field with the number of days to it. Bounds come from
+     the same MIN/MAX the field and openStake already enforce, so a date that
+     could not be staked cannot be picked. */
+  let dpView = null;                       // month on show
+  const dpMidnight = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const dpDaysBetween = (from, to) => Math.round((dpMidnight(to) - dpMidnight(from)) / 86400000);
+
+  function dpOpen() {
+    const days = parseInt($('stakeDays').value, 10);
+    const base = Number.isInteger(days) && days >= MIN_STAKE_DAYS && days <= MAX_STAKE_DAYS
+      ? new Date(Date.now() + days * 86400000)
+      : new Date(Date.now() + MIN_STAKE_DAYS * 86400000);
+    dpView = new Date(base.getFullYear(), base.getMonth(), 1);
+    $('daysCal').hidden = false;
+    $('daysCalBtn').setAttribute('aria-expanded', 'true');
+    dpRender();
+  }
+  function dpClose() {
+    $('daysCal').hidden = true;
+    $('daysCalBtn').setAttribute('aria-expanded', 'false');
+  }
+
+  function dpRender() {
+    const first = dpMidnight(new Date(Date.now() + MIN_STAKE_DAYS * 86400000));
+    const last = dpMidnight(new Date(Date.now() + MAX_STAKE_DAYS * 86400000));
+    const chosen = (() => {
+      const d = parseInt($('stakeDays').value, 10);
+      return Number.isInteger(d) && d >= MIN_STAKE_DAYS && d <= MAX_STAKE_DAYS
+        ? dpMidnight(new Date(Date.now() + d * 86400000)) : null;
+    })();
+
+    $('dpMonth').textContent = dpView.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    // a month with nothing selectable in it is a dead end, so stop the arrows there
+    $('dpPrev').disabled = new Date(dpView.getFullYear(), dpView.getMonth(), 0) < first;
+    $('dpNext').disabled = new Date(dpView.getFullYear(), dpView.getMonth() + 1, 1) > last;
+
+    const weekdays = ["S", "M", "T", "W", "T", "F", "S"];
+    let html = weekdays.map(w => `<span class="dp-head">${w}</span>`).join("");
+    const lead = new Date(dpView.getFullYear(), dpView.getMonth(), 1).getDay();
+    for (let i = 0; i < lead; i++) html += `<span class="dp-blank"></span>`;
+
+    const inMonth = new Date(dpView.getFullYear(), dpView.getMonth() + 1, 0).getDate();
+    for (let day = 1; day <= inMonth; day++) {
+      const d = dpMidnight(new Date(dpView.getFullYear(), dpView.getMonth(), day));
+      const ok = d >= first && d <= last;
+      const isSel = chosen && d.getTime() === chosen.getTime();
+      html += `<button type="button" data-days="${dpDaysBetween(new Date(), d)}"
+                 class="${isSel ? "sel" : ""}"${ok ? "" : " disabled"}
+                 aria-label="${d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}"
+               >${day}</button>`;
+    }
+    $('dpGrid').innerHTML = html;
+
+    const picked = parseInt($('stakeDays').value, 10);
+    $('dpFoot').textContent = Number.isInteger(picked) && picked >= MIN_STAKE_DAYS
+      ? `${picked.toLocaleString()} day${picked === 1 ? "" : "s"} from today`
+      : `${MIN_STAKE_DAYS} to ${MAX_STAKE_DAYS.toLocaleString()} days from today`;
+  }
+
+  function dpBind() {
+    const btn = $('daysCalBtn'), pop = $('daysCal');
+    if (!btn || !pop) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pop.hidden ? dpOpen() : dpClose();
+    });
+    $('dpPrev').addEventListener('click', () => {
+      dpView = new Date(dpView.getFullYear(), dpView.getMonth() - 1, 1); dpRender();
+    });
+    $('dpNext').addEventListener('click', () => {
+      dpView = new Date(dpView.getFullYear(), dpView.getMonth() + 1, 1); dpRender();
+    });
+    $('dpGrid').addEventListener('click', (e) => {
+      const cell = e.target.closest('button[data-days]');
+      if (!cell || cell.disabled) return;
+      $('stakeDays').value = cell.dataset.days;
+      // the preview and anything else watching the field listen for input
+      $('stakeDays').dispatchEvent(new Event('input', { bubbles: true }));
+      dpClose();
+      $('stakeDays').focus();
+    });
+    // clicking anywhere else, or Escape, puts it away
+    document.addEventListener('click', (e) => {
+      if (!pop.hidden && !pop.contains(e.target) && e.target !== btn) dpClose();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === "Escape" && !pop.hidden) { dpClose(); btn.focus(); }
+    });
   }
 
   async function openStake() {
@@ -3060,6 +3327,7 @@
   });
   $('stakeBtn').addEventListener('click', openStake);
   $('stakeDays').addEventListener('input', updateUnlockPreview);
+  dpBind();
   $('stakeAmount').addEventListener('input', updateStakeButton);
   $('exactApproval').addEventListener('change', updateStakeButton);
   $('copyDonate').addEventListener('click', async (e) => {
