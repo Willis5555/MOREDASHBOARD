@@ -52,6 +52,21 @@
   }
 
   header { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 40px; }
+  /* Everything staked across every contract, above the introduction — the one
+     figure that says how big this thing is before the page explains what it is. */
+  .tvl { margin-bottom: 26px; }
+  .tvl-k {
+    display: block; font-family: var(--sans); font-size: 13px;
+    color: var(--text-dim); margin-bottom: 4px;
+  }
+  .tvl-v {
+    font-size: 40px; line-height: 1.1; color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .tvl-note {
+    margin-top: 5px; font-family: var(--sans); font-size: 12.5px; color: var(--text-dim);
+  }
+
   .eyebrow { font-family: var(--mono); font-size: 13px; color: var(--text-dim); letter-spacing: 0.02em; }
   h1 { font-size: 42px; margin: 26px 0 10px; font-weight: 400; letter-spacing: -0.01em; }
   /* The heading ships empty and keeps the logo's height in reserve. It used to
@@ -653,6 +668,12 @@
 <div class="wrap">
 
   <header>
+    <div class="tvl" id="tvlBlock">
+      <span class="tvl-k">Total value staked</span>
+      <div class="tvl-v" id="tvlValue">—</div>
+      <div class="tvl-note" id="tvlNote"></div>
+    </div>
+
     <div class="eyebrow">UNOFFICIAL · COMMUNITY BUILT</div>
     <div class="sub">An independent dashboard for time-locked staking on
       <span id="networkList">Ethereum</span>, covering
@@ -677,8 +698,8 @@
       <div class="grid" id="poolGrid">
         <div class="cell"><span class="k">Total staked</span><span class="v" id="totalStaked">—</span><span class="note" id="stakedPct"></span></div>
         <div class="cell"><span class="k">Stakers</span><span class="v" id="stakers">—</span><span class="note" id="stakeCount"></span></div>
-        <div class="cell"><span class="k">Rewards distributed</span><span class="v" id="distributed">—</span></div>
-        <div class="cell"><span class="k" id="supplyLabel">Total supply</span><span class="v" id="supply">—</span></div>
+        <div class="cell"><span class="k">Rewards distributed</span><span class="v" id="distributed">—</span><span class="note" id="distributedNote"></span></div>
+        <div class="cell"><span class="k" id="supplyLabel">Total supply</span><span class="v" id="supply">—</span><span class="note" id="supplyNote"></span></div>
         <div class="cell" id="burnCell" style="display:none"><span class="k">Burned</span><span class="v" id="burned">—</span><span class="note" id="burnedNote"></span></div>
       </div>
       <div class="msg" id="poolMsg" style="margin-top:18px;">Reading from chain… <span class="retrobar" role="progressbar" aria-label="Loading pool stats"><i></i></span></div>
@@ -1385,6 +1406,7 @@
 
     paintPrice();
     paintPoolValue();
+    paintTvl();                 // priced from the amounts already read
     if (account) paintBalance();
   }
 
@@ -1551,12 +1573,51 @@
   }
 
   // --- Pool stats for the selected asset ---
+  /* ---- Everything staked, everywhere ----
+     The pool panel below only reads the asset you are looking at, so this reads
+     totalStaked() from every contract instead — one call each, all in flight at
+     once. Prices are already fetched for every asset on the 30s cycle, so the
+     figure is repainted from cache whenever they land rather than re-read. */
+  async function loadTotalStaked() {
+    await Promise.all(Object.values(assets).map(async (a) => {
+      if (!a.staking) return;
+      try { a.poolStaked = await a.staking.totalStaked(); }
+      catch (e) { a.poolStaked = null; }
+    }));
+    paintTvl();
+  }
+
+  function paintTvl() {
+    let total = 0, contracts = 0, unpriced = 0;
+    const chains = new Set();
+    for (const a of Object.values(assets)) {
+      if (!a.poolStaked || a.poolStaked.isZero()) continue;
+      if (a.price == null) { unpriced++; continue; }
+      total += toFloat(a.poolStaked, a) * a.price;
+      contracts++;
+      chains.add(a.chainId);
+    }
+    if (!contracts) {
+      $('tvlValue').textContent = "—";
+      $('tvlNote').textContent = "";
+      return;
+    }
+    $('tvlValue').textContent = usd(total);
+    $('tvlNote').textContent =
+      `across ${contracts} contract${contracts === 1 ? "" : "s"} on ` +
+      `${chains.size} chain${chains.size === 1 ? "" : "s"}` +
+      // a pool with no price cannot be valued, so say it is missing rather than
+      // letting the total quietly understate itself
+      (unpriced ? ` · ${unpriced} without a price` : "");
+  }
+
   async function loadPoolStats() {
     const a = selected();
     const msg = $('poolMsg');
+    poolAmounts = {};
     ["totalStaked", "stakers", "distributed", "supply", "burned"].forEach(id => $(id).textContent = "—");
-    ["stakedPct", "stakeCount", "burnedNote"].forEach(id => {
-      $(id).textContent = ""; delete $(id).dataset.pct;
+    ["stakedPct", "stakeCount", "burnedNote", "distributedNote", "supplyNote"].forEach(id => {
+      $(id).textContent = ""; delete $(id).dataset.pct; delete $(id).dataset.share;
     });
     $('burnCell').style.display = "none";
 
@@ -1594,6 +1655,7 @@
 
       if (totalStaked) {
         a.totalStakedFloat = toFloat(totalStaked, a);
+        poolAmounts.staked = totalStaked;
         $('totalStaked').innerHTML = unitLabel(fmtCompact(totalStaked, a), a);
       }
 
@@ -1601,6 +1663,7 @@
       // since there's no token supply to report.
       if (a.kind === "native") {
         $('supplyLabel').textContent = "Sent to buy & burn";
+        poolAmounts.supply = supply || null;
         $('supply').innerHTML = supply ? unitLabel(fmtCompact(supply, a), a) : "—";
       } else if (supply) {
         // Two burn models. On Ethereum, burned MORE sits at the dead address and
@@ -1621,6 +1684,7 @@
         // Not labelled "circulating" — a share of this is locked in stakes.
         const remFloat = toFloat(remaining, a);
         $('supplyLabel').textContent = "Total supply";
+        poolAmounts.supply = remaining;
         $('supply').innerHTML = unitLabel(fmtCompact(remaining, a), a);
 
         if (remFloat > 0) $('stakedPct').dataset.pct = (a.totalStakedFloat / remFloat * 100).toFixed(1) + "%";
@@ -1628,8 +1692,10 @@
         if (destroyed) {
           const mintedFloat = toFloat(minted, a);
           $('burnCell').style.display = "";
+          poolAmounts.burned = destroyed;
           $('burned').innerHTML = unitLabel(fmtCompact(destroyed, a), a);
-          $('burnedNote').textContent = mintedFloat > 0
+          // held on the element so the value can be re-composed beside it later
+          $('burnedNote').dataset.share = mintedFloat > 0
             ? (toFloat(destroyed, a) / mintedFloat * 100).toFixed(1) + "% of total supply"
             : "";
         }
@@ -1637,11 +1703,15 @@
         $('supplyLabel').textContent = "Total supply";
         $('supply').textContent = "—";
       }
-      paintPoolValue();
-
       if (stakers) $('stakers').textContent = stakers.toString();
       if (stakeIds) $('stakeCount').textContent = stakeIds.toString() + " stakes opened all-time";
-      if (distributed) $('distributed').innerHTML = unitLabel(fmtCompact(distributed, a), a);
+      if (distributed) {
+        poolAmounts.distributed = distributed;
+        $('distributed').innerHTML = unitLabel(fmtCompact(distributed, a), a);
+      }
+
+      // after every amount is in hand, so one pass fills all of them
+      paintPoolValue();
 
       msg.style.display = "none";
     } catch (e) {
@@ -1679,12 +1749,33 @@
       + ` the expected calls${why ? ": " + why : "."}`;
   }
 
+  /* Every stat that is an amount of the coin also says what it is worth. The
+     amounts are kept as they were read so this can re-run on its own: prices
+     arrive after the chain reads, and on a slow quote they arrive well after. */
+  let poolAmounts = {};
+
   function paintPoolValue() {
     const a = selected();
-    if (a.price == null || a.totalStakedFloat == null) return;
-    const el = $('stakedPct');
-    const pct = el.dataset.pct ? el.dataset.pct + " of supply · " : "";
-    el.textContent = pct + usd(a.totalStakedFloat * a.price) + " at current price";
+    const money = (bn) => (a.price == null || !bn) ? null : usd(toFloat(bn, a) * a.price);
+
+    // total staked keeps its share-of-supply prefix ahead of the value
+    const stakedEl = $('stakedPct');
+    if (stakedEl) {
+      const share = stakedEl.dataset.pct ? stakedEl.dataset.pct + " of supply" : "";
+      const v = money(poolAmounts.staked);
+      stakedEl.textContent = [share, v ? v + " at current price" : ""].filter(Boolean).join(" · ");
+    }
+
+    const put = (id, bn) => { const el = $(id); if (el) el.textContent = money(bn) || ""; };
+    put('distributedNote', poolAmounts.distributed);
+    put('supplyNote', poolAmounts.supply);
+
+    // burned already carries its share of supply, so the value joins it
+    const burnedEl = $('burnedNote');
+    if (burnedEl) {
+      burnedEl.textContent = [burnedEl.dataset.share || "", money(poolAmounts.burned)]
+        .filter(Boolean).join(" · ");
+    }
   }
 
   // ================= Stakes =================
@@ -3493,6 +3584,7 @@
     paintAssetNote();
     paintStakeForm();
     loadPoolStats();
+    loadTotalStaked();
     loadActivity();
     loadPrices();
     setInterval(loadPrices, 30000);
