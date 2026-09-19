@@ -242,6 +242,13 @@
      wordmark has no ascenders or descenders, so it needs more than cap height
      to read as the same size as the digits beside it. */
   .unit { height: 1.25em; width: auto; vertical-align: -0.24em; margin-left: 4px; }
+  /* Smaller than the token's own mark, so it reads as a qualifier on the unit
+     rather than a second unit standing beside it. */
+  .unit-chain { height: 0.72em; width: auto; vertical-align: 0.04em; margin-left: 7px; opacity: 0.85; }
+  .unit-chain-txt {
+    font-family: var(--sans); font-size: 0.5em; color: var(--text-dim);
+    margin-left: 7px; vertical-align: 0.25em; letter-spacing: 0.04em;
+  }
 
   .portfolio-total {
     font-size: 34px; color: var(--accent); font-variant-numeric: tabular-nums;
@@ -1275,7 +1282,17 @@
     const mark = a.logo
       ? `<img class="unit" src="${a.logo}" alt="${esc(a.meta.symbol)}" title="${esc(a.meta.symbol)}">`
       : "";
-    return a.wordmark ? `${text}${mark}` : `${text} ${esc(a.meta.symbol)}${mark}`;
+    if (!a.wordmark) return `${text} ${esc(a.meta.symbol)}${mark}`;
+
+    /* MORE is deployed on four chains behind one wordmark, so the mark on its own
+       does not say which deployment a figure belongs to. Only the wordmark assets
+       need this — every other ticker here already names its own chain (pWBTC,
+       pDAI) or exists in one place. */
+    const net = NETWORKS[a.chainId];
+    const chain = net.logo
+      ? `<img class="unit-chain" src="${net.logo}" alt="on ${esc(net.short)}" title="on ${esc(net.short)}">`
+      : `<span class="unit-chain-txt">${esc(net.short)}</span>`;
+    return `${text}${mark}${chain}`;
   }
   const txLink = (chainId, hash) => `${explorerFor(chainId)}/tx/${hash}`;
 
