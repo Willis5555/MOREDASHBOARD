@@ -95,6 +95,9 @@
 
   .panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; }
   .panel + .panel { margin-top: 16px; }
+  /* A heading partway down a section, rather than at the top of one, so it needs
+     the space above that a section's own first heading gets for free. */
+  .sub-head { margin-top: 34px; }
 
   /* Cells fill their track and read from its left edge. Centring each one inside
      a track meant four figures of different widths each sat somewhere different,
@@ -229,6 +232,16 @@
     font-size: 34px; color: var(--accent); font-variant-numeric: tabular-nums;
     margin-top: 6px; line-height: 1.15;
   }
+  /* The day's move on the whole position, under the figure it belongs to and in
+     the same up/down colours the rows use. */
+  .portfolio-delta {
+    margin-top: 5px; min-height: 18px;
+    font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .portfolio-delta .up { color: var(--green); }
+  .portfolio-delta .down { color: var(--red); }
+  .portfolio-delta .pct { opacity: 0.8; }
+  .portfolio-delta .note { font-family: var(--sans); font-size: 11px; color: var(--text-dim); }
   /* The figure is the point of this panel, so it centres on the panel itself and
      the action stays out at the right. Matching outer thirds mean the total does
      not drift with the button's width. Scoped, since other bars are two-sided. */
@@ -345,6 +358,14 @@
     .act-controls .check { justify-self: start; }
   }
 
+  /* The grid is held to a readable width, so everything stacked with it follows
+     the same measure — a centred calendar under a full-width bar reads as two
+     unrelated things sharing a panel. */
+  #calendarPanel .cal-bar,
+  #calendarPanel .cal-grid,
+  #calendarPanel .cal-detail,
+  #calendarPanel .cal-legend { max-width: 700px; margin-left: auto; margin-right: auto; }
+
   .cal-bar {
     display: flex; align-items: center; justify-content: space-between;
     gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
@@ -360,34 +381,53 @@
   .cal-actions button { margin-top: 0; padding: 4px 12px; font-size: 13px; }
   .cal-actions .check { margin-top: 0; }
 
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  /* Square cells. Across a full-width panel a seventh of the row is ~130px, so
+     letting the squares run that big would make a calendar half a screen tall —
+     the grid is held to a sensible width and centred instead. */
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+    max-width: 700px; margin: 0 auto;
+  }
   .cal-head {
-    text-align: center; font-size: 11px; color: var(--text-dim);
-    padding: 4px 0; letter-spacing: 0.06em; text-transform: uppercase;
+    text-align: center; font-size: 10.5px; color: var(--text-dim);
+    padding: 2px 0 6px; letter-spacing: 0.08em; text-transform: uppercase;
   }
   .cal-cell {
-    position: relative; min-height: 62px; padding: 5px 6px;
-    border: 1px solid var(--line); border-radius: 4px;
-    background: rgba(255,255,255,0.012);
+    position: relative; aspect-ratio: 1; padding: 6px;
+    display: flex; flex-direction: column; align-items: center;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: rgba(255,255,255,0.015);
     font-variant-numeric: tabular-nums;
+    transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+  }
+  /* the number keeps its own corner; whatever the day holds centres under it */
+  .cal-cell .dnum {
+    align-self: flex-start; font-family: var(--mono);
+    font-size: 11px; color: var(--text-dim); line-height: 1;
   }
   .cal-cell.blank { border-color: transparent; background: none; }
-  .cal-cell .dnum { font-size: 12px; color: var(--text-dim); }
-  .cal-cell.today { border-color: var(--accent); }
-  .cal-cell.today .dnum { color: var(--accent); font-weight: bold; }
+  .cal-cell.today { border-color: var(--accent-dim); }
+  .cal-cell.today .dnum { color: var(--accent); }
   .cal-cell.has { cursor: pointer; background: rgba(150,201,156,0.07); }
-  .cal-cell.has:hover { background: rgba(150,201,156,0.14); }
-  .cal-cell.sel { outline: 1px solid var(--accent); }
+  .cal-cell.has:hover { background: rgba(150,201,156,0.15); border-color: var(--accent-dim); }
+  .cal-cell.has:active { transform: scale(0.97); }
+  .cal-cell.sel { border-color: var(--accent); background: rgba(150,201,156,0.17); }
+  .cal-cell:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
   /* How many unlock, as a bare figure. Amber is kept for a day that is already
      late — that is a warning, not decoration, and dropping it would lose the one
      thing the colour was carrying. */
+  /* auto margins above the count and below the coins centre the pair in whatever
+     room the day number leaves */
   .cal-count {
-    display: block; margin-top: 4px;
-    font-family: var(--mono); font-size: 15px; line-height: 1.2;
+    display: block; margin: auto 0 3px;
+    font-family: var(--mono); font-size: 18px; line-height: 1;
     color: var(--accent); font-variant-numeric: tabular-nums;
   }
   .cal-count.amber { color: var(--amber); }
-  .cal-coins { display: flex; align-items: center; gap: 4px; margin-top: 4px; min-height: 14px; }
+  .cal-coins {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; margin: 0 0 auto; min-height: 14px; flex-wrap: nowrap;
+  }
   /* Bounded on both axes so a wide wordmark and a square icon both fit the cell
      without either being squashed. */
   .cal-coin { max-height: 14px; max-width: 38px; width: auto; height: auto; }
@@ -425,7 +465,10 @@
   .sw-amber { background: var(--amber); }
   .sw-accent { background: rgba(150,201,156,0.35); }
   @media (max-width: 720px) {
-    .cal-cell { min-height: 48px; padding: 3px 4px; }
+    /* still square, just tighter — the logos are the first thing to go */
+    .cal-grid { gap: 4px; }
+    .cal-cell { padding: 3px 4px; border-radius: 6px; }
+    .cal-count { font-size: 14px; }
     .cal-coins { display: none; }
     .cal-month { min-width: 130px; font-size: 9px; }
   }
@@ -676,6 +719,7 @@
         <div>
           <span class="k">Total value staked</span>
           <div class="portfolio-total" id="portfolioTotal">—</div>
+          <div class="portfolio-delta" id="portfolioDelta"></div>
         </div>
         <button id="portfolioBtn">Refresh</button>
       </div>
@@ -692,7 +736,7 @@
         <div class="cal-actions">
           <button id="calToday">Today</button>
           <label class="check">
-            <input type="checkbox" id="calAllBox"> Show stakes from all assets
+            <input type="checkbox" id="calAllBox" checked> Show stakes from all assets
           </label>
         </div>
       </div>
@@ -704,6 +748,8 @@
         <span><i class="sw sw-accent"></i>Still locked</span>
       </div>
     </div>
+
+    <h2 class="sub-head hidden" id="stakesHeading">Your Stakes</h2>
 
     <div class="panel hidden" id="walletPanel">
       <div class="wallet-bar wallet-bar-actions">
@@ -1945,7 +1991,10 @@
   // ---- Unlock calendar -------------------------------------------------
   // Shows when open stakes come due. Dates come from info.endTime, the same
   // field the Unlocks column uses, so the two can never disagree.
-  let calAllAssets = false;          // off by default, like the table toggle
+  // On by default: a month view is about when things come due, and unlocks on
+  // the other assets are just as due. Must match the checkbox's own checked
+  // state in the markup, or the first paint disagrees with the control.
+  let calAllAssets = true;
   let calCursor = null;              // first day of the month on screen
   let calSelected = null;            // yyyy-mm-dd of the day being detailed
   let calStakes = [];                // open stakes backing the current view
@@ -2831,6 +2880,7 @@
   async function onConnected() {
     $('connectPanel').classList.add('hidden');
     $('walletPanel').classList.remove('hidden');
+    $('stakesHeading').classList.remove('hidden');
     $('portfolioPanel').classList.remove('hidden');
     $('stakePanel').classList.remove('hidden');
     $('walletAddr').textContent = short(account);
@@ -2843,6 +2893,7 @@
     signer = null;
     account = null;
     $('walletPanel').classList.add('hidden');
+    $('stakesHeading').classList.add('hidden');
     $('portfolioPanel').classList.add('hidden');
     $('calendarPanel').classList.add('hidden');
     $('stakePanel').classList.add('hidden');
@@ -2898,6 +2949,28 @@
 
     const total = entries.reduce((n, e) => n + (e.value || 0), 0);
     $('portfolioTotal').textContent = usd(total);
+
+    /* The day's move across the whole position, on the same basis each row uses:
+       measured against what it was worth 24 hours ago, so the parts add up to the
+       whole. A holding with no change to read is left out of both sides rather
+       than counted as flat — that would quietly drag the percentage toward zero —
+       and the page says how many were skipped instead of hiding it. */
+    let moved = 0, base24h = 0, unpriced = 0;
+    for (const { a, value } of entries) {
+      if (value == null) continue;
+      const c = a.change;
+      if (c == null || c <= -100) { unpriced++; continue; }
+      const d = value * c / (100 + c);
+      moved += d;
+      base24h += value - d;
+    }
+    const pct = base24h > 0 ? (moved / base24h) * 100 : null;
+    $('portfolioDelta').innerHTML = pct == null ? "" :
+      `<span class="${moved >= 0 ? "up" : "down"}">` +
+        `${moved >= 0 ? "+" : "−"}${usd(Math.abs(moved))} ` +
+        `<span class="pct">${moved >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(2)}%</span>` +
+      `</span>` +
+      (unpriced ? ` <span class="note">· ${unpriced} without a 24h price</span>` : "");
 
     // Dust and empty positions are noise. An unpriced asset is kept when it
     // holds tokens, since there's no way to know whether it clears the bar.
