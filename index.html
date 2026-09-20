@@ -669,6 +669,10 @@
   .msg.ok { color: var(--green); }
   .msg a { color: inherit; }
   .tx-status { margin-top: 16px; }
+  #swapPanel .swap-title { margin-bottom: 16px; }
+  #swapPanel .cell .v { font-size: 19px; }
+  #swapPanel .cell .note b { color: var(--green); font-weight: 600; }
+  #swapQuick .pct-btn.active { border-color: var(--accent-dim); color: var(--accent); background: rgba(150,201,156,0.12); }
   .hidden { display: none; }
 
   .donate {
@@ -685,6 +689,16 @@
 
   footer { border-top: 1px solid var(--line); padding-top: 20px; font-family: var(--sans); font-size: 12px; color: var(--text-dim); }
   a { color: var(--accent-dim); }
+
+  /* ---- PAMP theme layer ----------------------------------------------------
+     The look of the PUMP MORE dashboard, applied on top: neon green for the title,
+     the pixel-font headings (upper-case, centred) and every headline figure. Kept
+     as one block at the end so it wins the cascade and can be lifted out again. */
+  :root { --neon: #39ff14; }
+  h1 { color: var(--neon); text-shadow: 0 0 14px rgba(57,255,20,0.45), 0 0 2px rgba(57,255,20,0.6); }
+  h2 { color: var(--neon); text-transform: uppercase; text-align: center; }
+  .cal-month { color: var(--neon); }
+  .tvl-v, .price-big, .cell .v, .portfolio-total { color: var(--neon); }
 </style>
 </head>
 <body>
@@ -752,6 +766,50 @@
 
   <section>
     <h2>Your Wallet</h2>
+
+    <!-- Robinhood Chain only: buy MORE through five pools at once. Shown for the
+         more-rh asset, hidden for every other tab. -->
+    <div class="panel hidden" id="swapPanel">
+      <h2 class="swap-title">Buy $MORE with less slippage</h2>
+      <div class="verify">
+        Swaps ETH for $MORE through five Robinhood Chain pools at once — a fifth through each —
+        so a single buy moves each pool less than it would move one. The pools pay the $MORE
+        straight to your wallet. Contract:
+        <code>0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF</code> —
+        <a href="https://robin.etherscan.io/address/0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF" target="_blank" rel="noopener">check it on the explorer</a>.
+        No fee, no owner, no cap.
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="swapAmount">ETH to spend</label>
+          <input type="number" id="swapAmount" placeholder="0.0" min="0" step="any" value="0.05">
+          <div class="pct-row" id="swapQuick">
+            <button class="pct-btn" data-eth="0.01">0.01</button>
+            <button class="pct-btn" data-eth="0.05">0.05</button>
+            <button class="pct-btn" data-eth="0.1">0.1</button>
+            <button class="pct-btn" data-eth="0.25">0.25</button>
+            <button class="pct-btn" data-eth="0.5">0.5</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>You would receive</label>
+          <div class="grid" style="gap:14px 20px">
+            <div class="cell"><span class="k">Split across 5 pools</span><span class="v" id="swapQuote">—</span><span class="note" id="swapQuoteNote">estimate, net of fees</span></div>
+            <div class="cell"><span class="k">Through one pool</span><span class="v" id="swapSingle">—</span><span class="note" id="swapGain">—</span></div>
+          </div>
+          <div class="hint" id="swapMinNote"></div>
+        </div>
+      </div>
+
+      <button id="swapBtn" disabled>Buy $MORE</button>
+      <div class="tx-status" id="swapStatus"></div>
+      <div class="hint">
+        Your minimum is set 1% under the quote; if the price moves more than that before your
+        transaction lands, it reverts and nothing is spent. If one of the five routes refuses its
+        swap, that fifth goes through the direct WETH/MORE pool instead of failing the buy.
+      </div>
+    </div>
 
     <div class="panel" id="connectPanel">
       <div class="msg" id="connectMsg">Connect a wallet to see your stakes and open a new one. Nothing is sent until you confirm a transaction yourself.</div>
@@ -876,6 +934,7 @@
       <button id="stakeBtn">Open stake</button>
       <div class="tx-status" id="txStatus"></div>
     </div>
+
   </section>
 
   <section>
@@ -896,8 +955,8 @@
     This dashboard can send transactions when you ask it to. Verify contract addresses yourself before approving anything.
 
     <div class="footlinks">
-      <a class="linkbtn" href="https://willis5555.github.io/PAMP/" target="_blank" rel="noopener">$PAMP WHITE PAPER <span class="newtag">NEW!</span></a>
       <a class="linkbtn has-mark" href="https://willis5555.github.io/FUEL/" target="_blank" rel="noopener"><img class="btn-mark" src="data:image/jpeg;base64,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AD49TOiJThQqh2Glc6S6huw4N1hqU/KwP2it1RqS94ONW38/Kd/1r3jky4XnY/M2Y5Bul56PzOkLK7pb3TjqYS4+YAriPVM0lVqS71Mjd109XLLj5TyeHk4rMqjV2oaQufT6ovQlwRkvxkHmPfKjrO62a/Wqnkt1jktzqWIb0klUJS928AQMNGG8c4OTnrUjwXBp4dOcpyT2kt3Rr3ksy9gNTCp1J1JKW0kuTo17zXiIi75KCtBVz0pJhmkjzz3XEZ86lyX24yDDqybnnIdg584VuRAeucXklxJJ5krxEQBERAEREAREQBERAEREAREQBERAFUgcGzRknADgSfSqaIDJ65j5ZGbkUrmt3uLWEg5cSCCOYwQvuA9GfCimH4p30LFt4+MpvO8Z7UBnsFXEwDLJ/wAi76FcYbpSt5iYfiX/AELWO+74R7U33fCPas6mNDbsV6oGczN+Rf8AQpseorY0cXzD8Q/6FpXfd8I9qb7vhHtTUaG8BqS1Y+6zf/Hf9C8OpLX+EmPmp3/QtIb7vhHtTfd8I9qwNDdT9R23HB0x/wAO/wChRZb9QO5Gb8g/6Fp/fd8I9qbzvGe1Z1GhtKa70js4E/5B/wBCgzV8DxwbN+Rd9C13vu+Ee1N93wj2pqNDLax5lB3Ipj+Kd9CoVTwyxzRva5jsBoD2luSXtPDPPgCsZ33fCPahcTzJKamTxERYAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAf/9k=" alt="">MINT FUEL</a>
+      <a class="linkbtn has-mark" href="https://willis5555.github.io/PAMP/" target="_blank" rel="noopener"><img src="data:image/png;base64,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" alt="" style="height:1.3em;width:auto">PAMP DAILY AUCTIONS <span class="newtag">NEW!</span></a>
     </div>
 
     <div class="donate">
@@ -1513,9 +1572,119 @@
     });
   }
 
+  /* ---- Buy $MORE through five pools (Robinhood Chain only) ----
+     A separate ownerless contract that routes a fifth of the ETH through each of the
+     five MORE pools and has the pools pay the MORE to the caller. Reads use the page's
+     Robinhood provider; the buy uses the connected signer once the wallet is on 4663. */
+  const SWAP_ADDRESS = "0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF";
+  const SWAP_CHAIN = 4663;
+  const SWAP_ABI = [
+    "function buy(uint256 minMoreOut) payable returns (uint256)",
+    "function quote(uint256 ethIn) view returns (uint256)",
+    "function quoteSingle(uint256 ethIn) view returns (uint256)"
+  ];
+  let swapQuote = null;      // { eth, split, single } as BigNumbers, for the typed amount
+  let swapQuoteTimer = null;
+
+  function swapAmountWei() {
+    try { return ethers.utils.parseEther(($('swapAmount').value || "0").trim()); }
+    catch (e) { return ethers.BigNumber.from(0); }
+  }
+
+  function paintSwapPanel() {
+    const show = selectedKey === "more-rh";
+    $('swapPanel').classList.toggle('hidden', !show);
+    if (show) { renderSwapQuote(); scheduleSwapQuote(); }
+  }
+
+  function scheduleSwapQuote() {
+    clearTimeout(swapQuoteTimer);
+    swapQuoteTimer = setTimeout(refreshSwapQuote, 250);
+  }
+
+  async function refreshSwapQuote() {
+    if (selectedKey !== "more-rh") return;
+    const eth = swapAmountWei();
+    if (eth.lte(0)) { swapQuote = null; renderSwapQuote(); return; }
+    try {
+      const c = new ethers.Contract(SWAP_ADDRESS, SWAP_ABI, providerFor(SWAP_CHAIN));
+      const [split, single] = await Promise.all([c.quote(eth), c.quoteSingle(eth)]);
+      swapQuote = { eth, split, single };
+    } catch (e) {
+      swapQuote = null;
+    }
+    renderSwapQuote();
+  }
+
+  function renderSwapQuote() {
+    const q = swapQuote, btn = $('swapBtn');
+    document.querySelectorAll('#swapQuick .pct-btn').forEach(b => {
+      b.classList.toggle('active', ($('swapAmount').value || "").trim() === b.dataset.eth);
+    });
+    if (!q || q.split.isZero()) {
+      $('swapQuote').textContent = "—"; $('swapSingle').textContent = "—";
+      $('swapGain').textContent = "—"; $('swapMinNote').textContent = "";
+      // With no wallet the button connects; with one, it waits for an amount.
+      btn.disabled = Boolean(account);
+      btn.textContent = account ? "Enter an amount" : "Connect wallet";
+      return;
+    }
+    const f = (bn) => Number(ethers.utils.formatUnits(bn, 18)).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    $('swapQuote').textContent = f(q.split) + " MORE";
+    $('swapSingle').textContent = f(q.single) + " MORE";
+    if (q.single.gt(0)) {
+      const gainBps = q.split.sub(q.single).mul(10000).div(q.single).toNumber();
+      $('swapGain').innerHTML = gainBps > 0
+        ? `you get <b>${(gainBps / 100).toFixed(2)}% more</b> (${f(q.split.sub(q.single))} MORE) by splitting`
+        : "no gain at this size — the direct pool is already the best route";
+    } else $('swapGain').textContent = "—";
+    const minOut = q.split.mul(99).div(100);
+    $('swapMinNote').textContent = `Reverts unless at least ${f(minOut)} MORE arrives (1% under the quote).`;
+    btn.disabled = false;
+    btn.textContent = account ? `Buy $MORE with ${ethers.utils.formatEther(q.eth)} ETH` : "Connect wallet";
+  }
+
+  async function doSwap() {
+    const q = swapQuote, btn = $('swapBtn'), st = $('swapStatus');
+    if (!account) {
+      // Same flow as the connect panel; it repaints this panel on success.
+      await connect();
+      if (!account) st.innerHTML = `<p class="msg error">${esc($('connectMsg').textContent || "Could not connect.")}</p>`;
+      return;
+    }
+    if (!q) return;
+    if (!(await ensureChain(SWAP_CHAIN))) {
+      st.innerHTML = `<p class="msg error">Switch your wallet to Robinhood Chain to buy.</p>`;
+      return;
+    }
+    // ensureChain may have rebuilt the signer; always take a fresh one.
+    signer = new ethers.providers.Web3Provider(window.ethereum).getSigner();
+    const minOut = q.split.mul(99).div(100);
+    btn.disabled = true;
+    btn.textContent = "Confirm in your wallet…";
+    st.innerHTML = "";
+    try {
+      const c = new ethers.Contract(SWAP_ADDRESS, SWAP_ABI, signer);
+      const tx = await c.buy(minOut, { value: q.eth });
+      btn.textContent = "Pending…";
+      st.innerHTML = `<p class="msg">Sent. <a href="${txLink(SWAP_CHAIN, tx.hash)}" target="_blank" rel="noopener">View on explorer</a> — waiting for it to confirm…</p>`;
+      const rc = await tx.wait();
+      st.innerHTML = `<p class="msg ok">Bought. <a href="${txLink(SWAP_CHAIN, rc.transactionHash)}" target="_blank" rel="noopener">View on explorer</a>.</p>`;
+      refreshBalances().catch(() => {});
+    } catch (e) {
+      st.innerHTML = `<p class="msg error">${e.code === 4001 || e.code === "ACTION_REJECTED"
+        ? "You rejected it in your wallet. Nothing was sent."
+        : "Buy failed: " + esc(e.reason || e.error?.message || e.message || e)}</p>`;
+    } finally {
+      renderSwapQuote();
+      refreshSwapQuote();
+    }
+  }
+
   function selectAsset(key) {
     if (!assets[key]) return;
     selectedKey = key;
+    paintSwapPanel();
     renderTabs();
     paintTitle();
     paintPrice();
@@ -3012,6 +3181,7 @@
     $('stakesHeading').classList.remove('hidden');
     $('portfolioPanel').classList.remove('hidden');
     $('stakePanel').classList.remove('hidden');
+    paintSwapPanel();
     $('walletAddr').textContent = short(account);
     $('walletAddr').title = account;
     paintStakeForm();
@@ -3528,6 +3698,14 @@
     if (account) refreshMyStakes();
   });
   $('stakeBtn').addEventListener('click', openStake);
+  $('swapBtn').addEventListener('click', doSwap);
+  $('swapAmount').addEventListener('input', () => { renderSwapQuote(); scheduleSwapQuote(); });
+  $('swapQuick').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-eth]');
+    if (!b) return;
+    $('swapAmount').value = b.dataset.eth;
+    renderSwapQuote(); scheduleSwapQuote();
+  });
   $('stakeDays').addEventListener('input', updateUnlockPreview);
   dpBind();
   $('stakeAmount').addEventListener('input', updateStakeButton);
@@ -3621,6 +3799,7 @@
     paintContracts();
     paintAssetNote();
     paintStakeForm();
+    paintSwapPanel();   // the swap panel follows the initial asset too
     loadPoolStats();
     loadTotalStaked();
     loadActivity();
