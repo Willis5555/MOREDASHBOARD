@@ -2828,6 +2828,17 @@
     { key: "when", label: "When", sort: r => r.time || 0,
       cell: r => r.time ? new Date(r.time * 1000).toLocaleString(undefined,
         { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
+    { key: "unlock", label: "Unlocks", sort: r => r.end || 0,
+      cell: r => {
+        if (!r.end) return `<span class="muted">—</span>`;
+        const date = new Date(r.end * 1000).toLocaleDateString(undefined,
+          { year: "2-digit", month: "short", day: "numeric" });
+        /* No countdown beside it: on a newest-first feed the days remaining are
+           almost always the term over again, which Term already says. What Term
+           cannot say is that an open stake is now past its date. */
+        if (r.kind !== "stake" || r.end > Date.now() / 1000) return date;
+        return `${date} <span class="muted">due</span>`;
+      } },
     { key: "tx", label: "Tx", nosort: true,
       cell: r => r.hash
         ? `<a href="${explorerFor(r.asset.chainId)}/tx/${r.hash}" target="_blank" rel="noopener">${esc(r.hash.slice(0, 8))}…</a>`
@@ -2868,6 +2879,9 @@
       // Kept so a closed record can show how long it was actually held —
       // the committed term doesn't tell you that.
       start,
+      // The scheduled unlock, straight off the contract. The term in days was
+      // already derived from it, so carrying it costs nothing.
+      end,
       claim: info.claimTime.toNumber(),
       rewards: rewards && !rewards.isZero() ? rewards : null,
       time: closed ? (info.claimTime.toNumber() || start) : start
