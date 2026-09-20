@@ -42,7 +42,9 @@
   /* The masthead stays a reading column; the data panels take the extra room. */
   @media (min-width: 1080px) {
     .wrap { max-width: 1040px; }
-    header, footer { max-width: 68ch; }
+    /* the header runs full width now and caps its prose instead; only the
+       footer is still a single reading column */
+    footer { max-width: 68ch; }
   }
   @media (min-width: 1260px) {
     .wrap { max-width: 1200px; }
@@ -51,53 +53,82 @@
     .wrap { max-width: 1340px; }
   }
 
-  header { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 40px; }
-  /* Everything staked across every contract, above the introduction — the one
-     figure that says how big this thing is before the page explains what it is. */
-  .tvl { margin-bottom: 26px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 26px; margin-bottom: 32px; }
+
+  /* Who this is on the left, the one headline figure boxed on the right. The
+     total used to sit loose above the introduction, where it read as a stray
+     line rather than as the number that says how big this thing is. */
+  .head-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 36px; flex-wrap: wrap;
+  }
+  .head-id { flex: 1 1 340px; min-width: 0; }
+
+  .tvl {
+    flex: 0 0 auto; border: 1px solid var(--line); background: var(--panel);
+    padding: 15px 20px; min-width: 214px;
+  }
   .tvl-k {
-    display: block; font-family: var(--sans); font-size: 13px;
-    color: var(--text-dim); margin-bottom: 4px;
+    display: block; font-family: var(--sans); font-size: 11px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 7px;
   }
   .tvl-v {
-    font-size: 40px; line-height: 1.1; color: var(--accent);
+    font-size: 30px; line-height: 1.05; color: var(--accent);
     font-variant-numeric: tabular-nums;
   }
   .tvl-note {
-    margin-top: 5px; font-family: var(--sans); font-size: 12.5px; color: var(--text-dim);
+    margin-top: 7px; font-family: var(--sans); font-size: 12px; color: var(--text-dim);
   }
 
-  .eyebrow { font-family: var(--mono); font-size: 13px; color: var(--text-dim); letter-spacing: 0.02em; }
-  h1 { font-size: 42px; margin: 26px 0 10px; font-weight: 400; letter-spacing: -0.01em; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  h1 { font-size: 34px; margin: 0; font-weight: 400; letter-spacing: -0.01em; }
   /* The heading ships empty and keeps the logo's height in reserve. It used to
      carry a "$MORE" placeholder, which flashed up before the script swapped the
      mark in — and since the text is half the logo's height, everything below it
      jumped down as the image landed. Centred so a text fallback, for an asset
      with no logo, still sits properly in the reserved box. */
-  #assetTitle { min-height: 92px; display: flex; align-items: center; }
-  h1 .brand { display: block; height: 92px; width: auto; max-width: 100%; }
-  .sub { color: var(--text-dim); font-size: 15px; max-width: 52ch; line-height: 1.5; font-family: var(--sans); }
+  #assetTitle { min-height: 64px; display: flex; align-items: center; margin: 16px 0 0; }
+  h1 .brand { display: block; height: 64px; width: auto; max-width: 100%; }
+  /* prose keeps a reading measure even though the header around it does not */
+  .sub {
+    color: var(--text-dim); font-size: 14.5px; max-width: 66ch; line-height: 1.6;
+    font-family: var(--sans); margin-top: 24px;
+  }
 
-  .price-row { display: flex; align-items: baseline; gap: 18px; margin-top: 24px; flex-wrap: wrap; }
-  .price-big { font-size: 36px; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .delta { font-family: var(--sans); font-size: 15px; padding: 2px 8px; border-radius: 3px; }
+  .price-row { display: flex; align-items: baseline; gap: 13px; margin-top: 14px; flex-wrap: wrap; }
+  .price-big { font-size: 29px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .price-note { font-family: var(--sans); font-size: 12.5px; color: var(--text-dim); }
+  .delta {
+    font-family: var(--sans); font-size: 13px; padding: 3px 9px; border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
   .delta.up { color: var(--green); background: rgba(178,229,186,0.16); }
   .delta.down { color: var(--red); background: rgba(235,158,138,0.14); }
 
   section { margin-bottom: 44px; }
 
-  .asset-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: -16px 0 28px; border-bottom: 1px solid var(--line); }
-  .asset-tab {
-    margin: 0; padding: 10px 18px; background: transparent; border: none;
-    border-bottom: 2px solid transparent; color: var(--text-dim);
-    font-family: var(--sans); font-size: 14px; cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease;
+  .asset-tabs {
+    display: flex; gap: 2px; flex-wrap: wrap; margin: 0 0 26px;
+    border-bottom: 1px solid var(--line);
   }
-  .asset-tab:hover { color: var(--text); background: transparent; }
+  /* inline-flex + gap so the ticker, its chain mark and any flag sit on one
+     baseline without each needing its own nudge */
+  .asset-tab {
+    margin: 0; padding: 9px 14px; background: transparent; border: none;
+    border-bottom: 2px solid transparent; color: var(--text-dim);
+    font-family: var(--sans); font-size: 13.5px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+  .asset-tab:hover { color: var(--text); background: rgba(150,201,156,0.07); }
   .asset-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .asset-tab.active .tab-net { color: var(--accent-dim); }
   .tab-flag { color: var(--amber); }
-  .tab-net { font-size: 11px; color: var(--text-dim); margin-left: 5px; }
-  .tab-chain { height: 16px; width: auto; vertical-align: -3px; margin-left: 6px; }
+  .tab-net { font-size: 11px; color: var(--text-dim); margin-left: 0; }
+  .tab-chain { height: 15px; width: auto; vertical-align: 0; margin-left: 0; }
   .assetnote {
     border-left: 2px solid var(--amber); padding-left: 14px;
     margin: -12px 0 28px; font-size: 13px;
@@ -669,9 +700,72 @@
   .msg.ok { color: var(--green); }
   .msg a { color: inherit; }
   .tx-status { margin-top: 16px; }
-  #swapPanel .swap-title { margin-bottom: 16px; }
+  /* One centred column. The panel is a single short task -- pick an amount, read
+     the quote, press buy -- but it was laid out as a two-column form, which left a
+     void beside the input and squeezed the quotes into a 260px gutter. */
+  #swapPanel { text-align: center; }
+  #swapPanel .swap-title { margin-bottom: 18px; }
+  #swapPanel .swap-wrap { max-width: 560px; margin: 0 auto; }
+  #swapPanel .verify {
+    border-left: 0; padding-left: 0; text-align: center;
+    max-width: 60ch; margin: 0 auto 24px;
+  }
+  /* the address used to break mid-hash inside the sentence; it gets its own line */
+  #swapPanel .contract { display: block; margin-top: 9px; font-size: 12.5px; }
+  #swapPanel .verify code { word-break: normal; }
+
+  #swapPanel label { text-align: center; }
+  #swapPanel #swapAmount { text-align: center; font-size: 16px; padding: 13px 12px; }
+  #swapPanel .pct-row { justify-content: center; }
+  #swapPanel .pct-btn { flex: 1 1 0; min-width: 62px; }
+
+  #swapPanel .swap-quotes {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px;
+  }
+  #swapPanel .swap-quotes .cell {
+    text-align: center; border: 1px solid var(--line); background: var(--bg);
+    padding: 15px 12px;
+  }
   #swapPanel .cell .v { font-size: 19px; }
+  #swapPanel .swap-gain {
+    font-family: var(--sans); font-size: 12.5px; color: var(--text-dim); margin-top: 13px;
+  }
+  #swapPanel .swap-gain b { color: var(--green); font-weight: 600; }
   #swapPanel .cell .note b { color: var(--green); font-weight: 600; }
+  #swapPanel #swapMinNote { margin-top: 10px; }
+  #swapPanel #swapBtn { margin-top: 24px; min-width: 264px; }
+  #swapPanel .tx-status { margin-top: 14px; }
+  #swapPanel .swap-foot { max-width: 58ch; margin: 20px auto 0; }
+
+  /* The stake form gets the same treatment as the swap panel: one centred
+     column, so the two panels on this page read as a pair rather than as one
+     centred card above a left-aligned form. */
+  #stakePanel { text-align: center; }
+  #stakePanel .stake-wrap { max-width: 600px; margin: 0 auto; }
+  #stakePanel .verify {
+    border-left: 0; padding-left: 0; text-align: center;
+    max-width: 60ch; margin: 0 auto 24px;
+  }
+  #stakePanel .contract { display: block; margin-top: 9px; font-size: 12.5px; }
+  #stakePanel .verify code { word-break: normal; }
+
+  #stakePanel .field-row { justify-content: center; gap: 20px; }
+  #stakePanel .field-row .field { flex: 1 1 260px; margin-bottom: 0; }
+  #stakePanel label { text-align: center; }
+  /* centred text needs matching padding on both sides, or the Max button and the
+     calendar button pull the apparent centre off to one side */
+  #stakePanel .amount-wrap input { text-align: center; padding-left: 52px; padding-right: 52px; }
+  #stakePanel .days-wrap input { text-align: center; padding-left: 40px; padding-right: 40px; }
+  #stakePanel .pct-row { justify-content: center; }
+  #stakePanel .pct-btn { flex: 1 1 0; min-width: 58px; }
+  #stakePanel .stake-wallet { margin-top: 12px; }
+  #stakePanel .preview { margin-top: 10px; }
+  #stakePanel .hint { max-width: 62ch; margin: 22px auto 0; }
+  /* .check is capped at 68ch, so it needs auto margins to sit centred in a
+     panel wider than that -- justify-content alone only centres its contents. */
+  #stakePanel .check { justify-content: center; margin: 16px auto 0; }
+  #stakePanel #stakeBtn { margin-top: 20px; min-width: 264px; }
+  #stakePanel .tx-status { margin-top: 14px; }
   #swapQuick .pct-btn.active { border-color: var(--accent-dim); color: var(--accent); background: rgba(150,201,156,0.12); }
   .hidden { display: none; }
 
@@ -705,25 +799,29 @@
 <div class="wrap">
 
   <header>
-    <div class="tvl" id="tvlBlock">
-      <span class="tvl-k">Total value staked</span>
-      <div class="tvl-v" id="tvlValue">—</div>
-      <div class="tvl-note" id="tvlNote"></div>
+    <div class="head-top">
+      <div class="head-id">
+        <div class="eyebrow">Unofficial · community built</div>
+        <!-- left empty on purpose: see #assetTitle in the stylesheet -->
+        <h1 id="assetTitle"></h1>
+        <div class="price-row">
+          <div class="price-big" id="price">—</div>
+          <div class="delta" id="delta">—</div>
+          <div class="price-note" id="priceNote"></div>
+        </div>
+      </div>
+
+      <div class="tvl" id="tvlBlock">
+        <span class="tvl-k">Total value staked</span>
+        <div class="tvl-v" id="tvlValue">—</div>
+        <div class="tvl-note" id="tvlNote"></div>
+      </div>
     </div>
 
-    <div class="eyebrow">UNOFFICIAL · COMMUNITY BUILT</div>
     <div class="sub">An independent dashboard for time-locked staking on
       <span id="networkList">Ethereum</span>, covering
       <span id="assetList">a range of assets</span>. Prices come from public markets and staking
       data is read directly from the blockchain. Not affiliated with moretokens.com.</div>
-    <!-- left empty on purpose: see #assetTitle in the stylesheet -->
-    <h1 id="assetTitle"></h1>
-
-    <div class="price-row">
-      <div class="price-big" id="price">—</div>
-      <div class="delta" id="delta">—</div>
-      <div class="price-note" id="priceNote"></div>
-    </div>
   </header>
 
   <div class="asset-tabs" id="assetTabs"></div>
@@ -771,16 +869,18 @@
          more-rh asset, hidden for every other tab. -->
     <div class="panel hidden" id="swapPanel">
       <h2 class="swap-title">Buy $MORE with less slippage</h2>
-      <div class="verify">
-        Swaps ETH for $MORE through five Robinhood Chain pools at once — a fifth through each —
-        so a single buy moves each pool less than it would move one. The pools pay the $MORE
-        straight to your wallet. Contract:
-        <code>0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF</code> —
-        <a href="https://robin.etherscan.io/address/0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF" target="_blank" rel="noopener">check it on the explorer</a>.
-        No fee, no owner, no cap.
-      </div>
 
-      <div class="field-row">
+      <div class="swap-wrap">
+        <div class="verify">
+          Swaps ETH for $MORE through five Robinhood Chain pools at once — a fifth through each —
+          so a single buy moves each pool less than it would move one. The pools pay the $MORE
+          straight to your wallet. No fee, no owner, no cap.
+          <span class="contract">
+            <code>0x227CBE5a…D61bdbbF</code> ·
+            <a href="https://robin.etherscan.io/address/0x227CBE5aFDF75EE15bB308dc849f46E5D61bdbbF" target="_blank" rel="noopener">check it on the explorer</a>
+          </span>
+        </div>
+
         <div class="field">
           <label for="swapAmount">ETH to spend</label>
           <input type="number" id="swapAmount" placeholder="0.0" min="0" step="any" value="0.05">
@@ -792,22 +892,21 @@
             <button class="pct-btn" data-eth="0.5">0.5</button>
           </div>
         </div>
-        <div class="field">
-          <label>You would receive</label>
-          <div class="grid" style="gap:14px 20px">
-            <div class="cell"><span class="k">Split across 5 pools</span><span class="v" id="swapQuote">—</span><span class="note" id="swapQuoteNote">estimate, net of fees</span></div>
-            <div class="cell"><span class="k">Through one pool</span><span class="v" id="swapSingle">—</span><span class="note" id="swapGain">—</span></div>
-          </div>
-          <div class="hint" id="swapMinNote"></div>
-        </div>
-      </div>
 
-      <button id="swapBtn" disabled>Buy $MORE</button>
-      <div class="tx-status" id="swapStatus"></div>
-      <div class="hint">
-        Your minimum is set 1% under the quote; if the price moves more than that before your
-        transaction lands, it reverts and nothing is spent. If one of the five routes refuses its
-        swap, that fifth goes through the direct WETH/MORE pool instead of failing the buy.
+        <div class="swap-quotes">
+          <div class="cell"><span class="k">Split across 5 pools</span><span class="v" id="swapQuote">—</span><span class="note" id="swapQuoteNote">estimate, net of fees</span></div>
+          <div class="cell"><span class="k">Through one pool</span><span class="v" id="swapSingle">—</span><span class="note">the same buy, unsplit</span></div>
+        </div>
+        <div class="swap-gain" id="swapGain">—</div>
+        <div class="hint" id="swapMinNote"></div>
+
+        <button id="swapBtn" disabled>Buy $MORE</button>
+        <div class="tx-status" id="swapStatus"></div>
+        <div class="hint swap-foot">
+          Your minimum is set 1% under the quote; if the price moves more than that before your
+          transaction lands, it reverts and nothing is spent. If one of the five routes refuses its
+          swap, that fifth goes through the direct WETH/MORE pool instead of failing the buy.
+        </div>
       </div>
     </div>
 
@@ -851,30 +950,21 @@
       </div>
     </div>
 
-    <h2 class="sub-head hidden" id="stakesHeading">Your Stakes</h2>
-
-    <div class="panel hidden" id="walletPanel">
-      <div class="wallet-bar wallet-bar-actions">
-        <div class="wallet-actions">
-          <button id="disconnectBtn">Disconnect</button>
-          <label class="check">
-            <input type="checkbox" id="allAssetsBox"> Show stakes from all assets
-          </label>
-        </div>
-      </div>
-      <div id="myStakes"></div>
-      <div class="tx-status" id="unstakeStatus"></div>
-    </div>
-
     <div class="panel hidden" id="stakePanel">
-      <div class="verify">
-        This page is not run by the $MORE team. Staking sends your tokens to
-        <code id="stakingAddrText"></code> —
-        <a id="stakingAddrLink" target="_blank" rel="noopener">check it on the explorer</a>
-        against the address published on the official site before you confirm anything.
-      </div>
+      <h2 class="swap-title">Open a stake</h2>
 
-      <div class="field-row">
+      <div class="stake-wrap">
+        <div class="verify">
+          This page is not run by the $MORE team. Staking sends your tokens to the address
+          below — check it against the one published on the official site before you confirm
+          anything.
+          <span class="contract">
+            <code id="stakingAddrText"></code> ·
+            <a id="stakingAddrLink" target="_blank" rel="noopener">check it on the explorer</a>
+          </span>
+        </div>
+
+        <div class="field-row">
         <div class="field">
           <label for="stakeAmount">Amount to stake (<span id="stakeSymbol">—</span>)</label>
           <div class="amount-wrap">
@@ -931,9 +1021,27 @@
         <input type="checkbox" id="exactApproval"> Approve only this amount instead of unlimited
       </label>
 
-      <button id="stakeBtn">Open stake</button>
-      <div class="tx-status" id="txStatus"></div>
+        <button id="stakeBtn">Open stake</button>
+        <div class="tx-status" id="txStatus"></div>
+      </div>
     </div>
+
+    <h2 class="sub-head hidden" id="stakesHeading">Your Stakes</h2>
+
+    <div class="panel hidden" id="walletPanel">
+      <div class="wallet-bar wallet-bar-actions">
+        <div class="wallet-actions">
+          <button id="disconnectBtn">Disconnect</button>
+          <label class="check">
+            <input type="checkbox" id="allAssetsBox"> Show stakes from all assets
+          </label>
+        </div>
+      </div>
+      <div id="myStakes"></div>
+      <div class="tx-status" id="unstakeStatus"></div>
+    </div>
+
+
 
   </section>
 
